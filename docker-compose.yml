@@ -29,6 +29,16 @@ services:
       db:
         condition: service_healthy   # API startuje dopiero, gdy baza jest gotowa
 
+  # Worker w Pythonie — w tle wzbogaca IOC (na razie: DNS)
+  worker:
+    build: ./worker
+    environment:
+      DATABASE_URL: "postgres://ti:ti@db:5432/ti?sslmode=disable"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped   # gdyby padł, Docker go podniesie
+
   # Adminer — prosty panel w przeglądarce do podglądania bazy (localhost:8081)
   adminer:
     image: adminer:latest

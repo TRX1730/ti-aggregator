@@ -23,6 +23,22 @@ type IOC struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Enrichment to jedno wzbogacenie IOC (wynik pracy workera).
+// Data to gotowy JSON z bazy — RawMessage przepuszcza go bez base64.
+type Enrichment struct {
+	ID        int64           `json:"id"`
+	Source    string          `json:"source"`
+	Data      json.RawMessage `json:"data"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+// IOCWithEnrichments "zawiera w sobie" IOC (embedding) i dokłada listę wzbogaceń.
+// W JSON-ie pola IOC są na wierzchu, plus tablica "enrichments".
+type IOCWithEnrichments struct {
+	IOC
+	Enrichments []Enrichment `json:"enrichments"`
+}
+
 // createIOCInput to TYLKO to, co klient ma prawo podać przy tworzeniu.
 // (id i created_at nadaje baza, więc ich tu nie ma.)
 type createIOCInput struct {
@@ -122,9 +138,40 @@ func (s *server) getIOC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5) Sukces: odsyłamy znaleziony wiersz.
-	writeJSON(w, http.StatusOK, out)
+	// 5) Dobieramy wzbogacenia tego IOC (może być zero — wtedy pusta lista).
+	eRows, err := s.db.Query(ctx,
+		`SELECT id, source, data, created_at
+		 FROM enrichments
+		 WHERE ioc_id = $1
+		 ORDER BY id`,
+		id,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "błąd pobierania wzbogaceń")
+		return
+	}
+	defer eRows.Close()
+
+	enrichments := []Enrichment{}
+	for eRows.Next() {
+		var e Enrichment
+		var raw []byte // jsonb wczytujemy do []byte...
+		if err := eRows.Scan(&e.ID, &e.Source, &raw, &e.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "błąd odczytu wzbogacenia")
+			return
+		}
+		e.Data = raw // ...a potem oddajemy jako surowy JSON (RawMessage)
+		enrichments = append(enrichments, e)
+	}
+	if err := eRows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "błąd podczas iteracji wzbogaceń")
+		return
+	}
+
+	// 6) Sukces: IOC razem z jego wzbogaceniami.
+	writeJSON(w, http.StatusOK, IOCWithEnrichments{IOC: out, Enrichments: enrichments})
 }
+
 // ── HANDLER: GET /iocs (lista z opcjonalnym filtrem ?type=) ───────────────
 func (s *server) listIOCs(w http.ResponseWriter, r *http.Request) {
 	// Filtr z query stringa, np. /iocs?type=ip  (pusty = wszystkie).
