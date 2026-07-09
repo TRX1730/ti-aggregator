@@ -125,3 +125,47 @@ func (s *server) getIOC(w http.ResponseWriter, r *http.Request) {
 	// 5) Sukces: odsyłamy znaleziony wiersz.
 	writeJSON(w, http.StatusOK, out)
 }
+// ── HANDLER: GET /iocs (lista z opcjonalnym filtrem ?type=) ───────────────
+func (s *server) listIOCs(w http.ResponseWriter, r *http.Request) {
+	// Filtr z query stringa, np. /iocs?type=ip  (pusty = wszystkie).
+	typeFilter := r.URL.Query().Get("type")
+	if typeFilter != "" && !allowedTypes[typeFilter] {
+		writeError(w, http.StatusBadRequest, "type musi być jednym z: ip, domain, hash, url")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	// Query zwraca WIELE wierszy. Sztuczka: puste $1 przepuszcza wszystkie.
+	rows, err := s.db.Query(ctx,
+		`SELECT id, type, value, source, created_at
+		 FROM iocs
+		 WHERE ($1 = '' OR type = $1)
+		 ORDER BY id`,
+		typeFilter,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "błąd zapytania do bazy")
+		return
+	}
+	defer rows.Close() // ZAWSZE zamknij kursor po zakończeniu
+
+	// Zbieramy wiersze do listy.
+	list := []IOC{}
+	for rows.Next() {
+		var it IOC
+		if err := rows.Scan(&it.ID, &it.Type, &it.Value, &it.Source, &it.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "błąd odczytu wiersza")
+			return
+		}
+		list = append(list, it)
+	}
+	// Po pętli sprawdzamy, czy iteracja się nie wywaliła.
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "błąd podczas iteracji")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, list)
+}

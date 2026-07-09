@@ -43,7 +43,7 @@ func main() {
 	mux.HandleFunc("GET /health", srv.healthHandler)
 	mux.HandleFunc("POST /iocs", srv.createIOC)      // wzorzec — gotowy
 	mux.HandleFunc("GET /iocs/{id}", srv.getIOC)     // Twoje zadanie do napisania
-
+	mux.HandleFunc("GET /iocs", srv.listIOCs)
 	addr := ":" + port
 	log.Printf("API startuje na %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
