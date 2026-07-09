@@ -6,69 +6,148 @@
 <title>TI Aggregator</title>
 <style>
   :root {
-    --bg: #0d1117; --panel: #161b22; --border: #30363d;
-    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
-    --danger: #f85149; --ok: #3fb950; --chip: #21262d;
+    --bg: #0b0f14; --panel: #12181f; --panel2: #161d26;
+    --border: #232b36; --text: #e6edf3; --muted: #8b98a9;
+    --accent: #4c9ffe; --accent2: #2f81f7;
+    --ok: #3fb950; --danger: #f85149; --warn: #f0883e;
+    --purple: #a371f7; --cyan: #56d4dd; --chip: #1b232e;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; font-family: system-ui, sans-serif;
-    background: var(--bg); color: var(--text); padding: 24px;
+    margin: 0; font-family: 'Segoe UI', system-ui, sans-serif;
+    background: radial-gradient(1200px 600px at 80% -10%, #12202f 0%, var(--bg) 55%);
+    color: var(--text); padding: 20px 24px 40px; min-height: 100vh;
   }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  code, .mono { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
+
+  /* ── App bar ── */
+  .appbar { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+  .logo { width: 38px; height: 38px; flex: none; }
+  .brand h1 { font-size: 19px; margin: 0; letter-spacing: .3px; }
+  .brand .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .live { margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--border);
+    padding: 6px 12px; border-radius: 20px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+  /* ── Stats ── */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .stat .n { font-size: 24px; font-weight: 700; }
+  .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-top: 2px; }
+  .stat.ip .n { color: var(--accent); }
+  .stat.domain .n { color: var(--ok); }
+  .stat.other .n { color: var(--purple); }
+
+  /* ── Layout / panels ── */
   .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2,1fr); } }
   .panel {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 8px; padding: 16px;
+    background: linear-gradient(180deg, var(--panel2), var(--panel));
+    border: 1px solid var(--border); border-radius: 14px; padding: 18px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.25);
   }
-  .panel h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 600; }
-  tr.row { cursor: pointer; }
-  tr.row:hover { background: var(--chip); }
-  tr.row.sel { background: var(--chip); box-shadow: inset 3px 0 0 var(--accent); }
-  .live { display: inline-flex; align-items: center; gap: 6px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s infinite; }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-  .type { font-family: monospace; font-size: 12px; padding: 2px 6px; border-radius: 4px; background: var(--chip); }
-  .val { font-family: monospace; }
-  form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .panel h2 { font-size: 12px; margin: 0 0 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; }
+
+  /* ── Form ── */
+  form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   select, input {
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px; font-size: 13px;
+    border-radius: 8px; padding: 9px 10px; font-size: 13px; outline: none;
   }
-  input { flex: 1; min-width: 120px; }
+  select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(76,159,254,.15); }
+  input { flex: 1; min-width: 140px; }
   button {
-    background: var(--accent); color: #0d1117; border: none; border-radius: 6px;
-    padding: 8px 14px; font-weight: 600; cursor: pointer; font-size: 13px;
+    background: linear-gradient(180deg, var(--accent), var(--accent2)); color: #06101c; border: none;
+    border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; font-size: 13px;
   }
-  button.ghost { background: var(--chip); color: var(--text); }
-  .enr { border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+  button:hover { filter: brightness(1.08); }
+  .chips { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip { background: var(--chip); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer; }
+  .chip.active { color: var(--text); border-color: var(--accent); background: rgba(76,159,254,.12); }
+  .btn-export { margin-left: auto; text-decoration: none; background: var(--chip); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 13px; font-size: 12px; }
+  .btn-export:hover { border-color: var(--ok); color: var(--ok); }
+
+  /* ── List ── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  td { padding: 10px; border-top: 1px solid var(--border); }
+  tr.row { cursor: pointer; transition: background .12s; }
+  tr.row:hover { background: rgba(255,255,255,.03); }
+  tr.row.sel { background: rgba(76,159,254,.10); box-shadow: inset 3px 0 0 var(--accent); }
+  .val { font-family: ui-monospace, monospace; color: var(--text); }
+  .src-cell { color: var(--muted); font-size: 12px; }
+
+  /* ── Type pill ── */
+  .type { font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
+    background: var(--chip); color: var(--muted); border: 1px solid var(--border); }
+  .type.type-ip { color: var(--accent); border-color: rgba(76,159,254,.4); }
+  .type.type-domain { color: var(--ok); border-color: rgba(63,185,80,.4); }
+  .type.type-hash { color: var(--purple); border-color: rgba(163,113,247,.4); }
+  .type.type-url { color: var(--warn); border-color: rgba(240,136,62,.4); }
+
+  /* ── Detail header ── */
+  .dhead { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .dhead .big { font-size: 18px; font-weight: 700; font-family: ui-monospace, monospace; word-break: break-all; }
+  .dmeta { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+
+  /* ── Enrichment cards ── */
+  .enr { background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .enr-dns { border-left-color: var(--accent); }
+  .enr-whois { border-left-color: var(--purple); }
+  .enr-tor { border-left-color: var(--danger); }
+  .enr-cdn { border-left-color: var(--warn); }
+  .enr-crt { border-left-color: var(--ok); }
+  .enr-tech { border-left-color: var(--cyan); }
   .enr-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .src { font-family: monospace; font-size: 11px; text-transform: uppercase; color: var(--muted); }
-  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+  .src { font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 20px; background: var(--chip); color: var(--muted); }
+  .src-dns { color: var(--accent); } .src-whois { color: var(--purple); }
+  .src-tor { color: var(--danger); } .src-cdn { color: var(--warn); }
+  .src-crt { color: var(--ok); } .src-tech { color: var(--cyan); }
+
+  .badge { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
   .badge.tor { background: rgba(248,81,73,.15); color: var(--danger); border: 1px solid var(--danger); }
   .badge.clean { background: rgba(63,185,80,.12); color: var(--ok); border: 1px solid var(--ok); }
-  .badge.cf { background: rgba(240,136,62,.15); color: #f0883e; border: 1px solid #f0883e; }
+  .badge.cf { background: rgba(240,136,62,.15); color: var(--warn); border: 1px solid var(--warn); }
   .badge.lowconf { background: var(--chip); color: var(--muted); border: 1px solid var(--border); }
-  .kv { font-size: 12px; color: var(--muted); }
+
+  .kv { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
   .kv b { color: var(--text); font-weight: 600; }
-  .err { color: var(--danger); font-size: 12px; font-family: monospace; }
-  .empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
-  h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin: 18px 0 8px; }
-  .rel { cursor: pointer; padding: 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
-  .rel:hover { background: var(--chip); box-shadow: inset 3px 0 0 var(--accent); }
-  pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow: auto; font-size: 11px; max-height: 200px; }
-  .msg { font-size: 12px; margin-left: 8px; }
+  .err { color: var(--danger); font-size: 12px; font-family: ui-monospace, monospace; }
+  .empty { color: var(--muted); font-size: 13px; padding: 26px 0; text-align: center; }
+  h3 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin: 20px 0 10px; }
+  .rel { cursor: pointer; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 8px; font-size: 13px; transition: background .12s; }
+  .rel:hover { background: rgba(76,159,254,.07); box-shadow: inset 3px 0 0 var(--accent); }
+  pre { background: #0a0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+    overflow: auto; font-size: 11px; max-height: 200px; }
+  summary { cursor: pointer; }
+  .msg { font-size: 12px; margin-left: 6px; align-self: center; }
   .msg.ok { color: var(--ok); } .msg.bad { color: var(--danger); }
 </style>
 </head>
 <body>
-  <h1>TI Aggregator</h1>
-  <div class="sub">Wskaźniki zagrożeń + automatyczne wzbogacanie (DNS · whois · Tor · CDN · crt.sh · tech)
-    &nbsp;·&nbsp; <span class="live"><span class="dot"></span> auto-odświeżanie</span></div>
+  <div class="appbar">
+    <svg class="logo" viewBox="0 0 48 48" fill="none">
+      <circle cx="24" cy="24" r="20" stroke="#4c9ffe" stroke-width="2" opacity=".5"/>
+      <circle cx="24" cy="24" r="12" stroke="#4c9ffe" stroke-width="2" opacity=".7"/>
+      <circle cx="24" cy="24" r="3.5" fill="#4c9ffe"/>
+      <path d="M24 24 L40 14" stroke="#3fb950" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="40" cy="14" r="3" fill="#3fb950"/>
+    </svg>
+    <div class="brand">
+      <h1>TI Aggregator</h1>
+      <div class="sub">Threat intelligence · wzbogacanie · powiązania</div>
+    </div>
+    <span class="live"><span class="dot"></span> live</span>
+  </div>
+
+  <div id="stats" class="stats"></div>
 
   <div class="layout">
     <div class="panel">
@@ -85,17 +164,18 @@
         <button type="submit">Dodaj</button>
         <span id="addMsg" class="msg"></span>
       </form>
-      <div id="filters" style="margin-bottom:12px;">
-        <button class="ghost" data-t="">wszystkie</button>
-        <button class="ghost" data-t="ip">ip</button>
-        <button class="ghost" data-t="domain">domain</button>
+      <div id="filters" class="chips">
+        <button class="chip active" data-t="">wszystkie</button>
+        <button class="chip" data-t="ip">ip</button>
+        <button class="chip" data-t="domain">domeny</button>
+        <a href="/export/stix" class="btn-export" download>⬇ Eksport STIX 2.1</a>
       </div>
       <div id="listWrap"></div>
     </div>
 
     <div class="panel">
       <h2>Szczegóły</h2>
-      <div id="detail"><div class="empty">Kliknij wskaźnik po lewej, żeby zobaczyć wzbogacenia.</div></div>
+      <div id="detail"><div class="empty">Kliknij wskaźnik po lewej, żeby zobaczyć wzbogacenia i powiązania.</div></div>
     </div>
   </div>
 
@@ -120,25 +200,39 @@ let selectedId = null;
 let lastListSig = "";
 let lastDetailSig = "";
 
+function updateStats(all) {
+  const total = all.length;
+  const ip = all.filter(i => i.type === "ip").length;
+  const dom = all.filter(i => i.type === "domain").length;
+  const other = total - ip - dom;
+  $("#stats").innerHTML = `
+    <div class="stat"><div class="n">${total}</div><div class="l">Wskaźniki</div></div>
+    <div class="stat ip"><div class="n">${ip}</div><div class="l">Adresy IP</div></div>
+    <div class="stat domain"><div class="n">${dom}</div><div class="l">Domeny</div></div>
+    <div class="stat other"><div class="n">${other}</div><div class="l">Inne (hash/url)</div></div>`;
+}
+
 async function loadList(force = false) {
-  const q = currentFilter ? `?type=${currentFilter}` : "";
-  const { ok, body } = await api(`/iocs${q}`);
+  // Pobieramy WSZYSTKIE (do statystyk), filtrujemy po stronie klienta.
+  const { ok, body } = await api(`/iocs`);
   if (!ok || !Array.isArray(body)) return;
+  updateStats(body);
+
+  const shown = currentFilter ? body.filter(i => i.type === currentFilter) : body;
   const wrap = $("#listWrap");
-  if (body.length === 0) {
-    wrap.innerHTML = `<div class="empty">Brak wskaźników.</div>`;
-    lastListSig = "empty|" + currentFilter;
-    return;
-  }
-  // Sygnatura = filtr + lista id. Jeśli bez zmian, nie przerysowujemy (brak migania).
-  const sig = currentFilter + "|" + body.map(i => i.id).join(",");
+  const sig = currentFilter + "|" + shown.map(i => i.id).join(",");
   if (!force && sig === lastListSig) return;
   lastListSig = sig;
-  const rows = body.map(i => `
+
+  if (shown.length === 0) {
+    wrap.innerHTML = `<div class="empty">Brak wskaźników.</div>`;
+    return;
+  }
+  const rows = shown.map(i => `
     <tr class="row ${String(i.id) === String(selectedId) ? "sel" : ""}" data-id="${i.id}">
-      <td><span class="type">${esc(i.type)}</span></td>
+      <td><span class="type type-${esc(i.type)}">${esc(i.type)}</span></td>
       <td class="val">${esc(i.value)}</td>
-      <td>${esc(i.source)}</td>
+      <td class="src-cell">${esc(i.source)}</td>
     </tr>`).join("");
   wrap.innerHTML = `<table>
     <thead><tr><th>typ</th><th>wartość</th><th>źródło</th></tr></thead>
@@ -173,7 +267,7 @@ function renderEnrichment(e) {
       if (h.handle) parts.push(`<b>handle:</b> ${esc(h.handle)}`);
       if (h.ldhName) parts.push(`<b>domena:</b> ${esc(h.ldhName)}`);
       inner = `<div class="kv">${parts.join(" &nbsp;·&nbsp; ") || "—"}</div>
-        <details><summary class="kv" style="cursor:pointer">surowy RDAP</summary>
+        <details><summary class="kv">surowy RDAP</summary>
         <pre>${esc(JSON.stringify(d.raw ?? d, null, 2))}</pre></details>`;
     }
   } else if (e.source === "cdn") {
@@ -182,7 +276,7 @@ function renderEnrichment(e) {
       const badge = d.behind_cdn
         ? `<span class="badge cf">${esc((d.provider||"cdn").toUpperCase())}</span>`
         : `<span class="badge clean">bez CDN/WAF</span>`;
-      let extra = `<div class="kv"><b>IP:</b> ${(d.resolved_ips||[]).map(esc).join(", ")}</div>`;
+      let extra = `<div class="kv" style="margin-top:6px"><b>IP:</b> ${(d.resolved_ips||[]).map(esc).join(", ")}</div>`;
       if (d.behind_cdn) {
         const cands = d.origin_candidates || [];
         if (cands.length) {
@@ -200,7 +294,7 @@ function renderEnrichment(e) {
     else {
       const subs = d.subdomains || [];
       inner = `<div class="kv"><b>${d.count || 0}</b> subdomen z certyfikatów (crt.sh)</div>` +
-        (subs.length ? `<details><summary class="kv" style="cursor:pointer">pokaż subdomeny</summary>
+        (subs.length ? `<details><summary class="kv">pokaż subdomeny</summary>
           <pre>${esc(subs.join("\n"))}</pre></details>` : "");
     }
   } else if (e.source === "tech") {
@@ -213,7 +307,7 @@ function renderEnrichment(e) {
       if (d.api) parts.push(`<b>API:</b> ${d.api.map(esc).join(", ")}`);
       if (d.stack) {
         for (const [cat, items] of Object.entries(d.stack)) {
-          if (cat === "framework") continue; // pokazane wyżej jako "frontend"
+          if (cat === "framework") continue;
           parts.push(`<b>${esc(labels[cat] || cat)}:</b> ${items.map(esc).join(", ")}`);
         }
       }
@@ -227,14 +321,13 @@ function renderEnrichment(e) {
   } else {
     inner = `<pre>${esc(JSON.stringify(d, null, 2))}</pre>`;
   }
-  return `<div class="enr">
-    <div class="enr-head"><span class="src">${esc(e.source)}</span>
+  return `<div class="enr enr-${esc(e.source)}">
+    <div class="enr-head"><span class="src src-${esc(e.source)}">${esc(e.source)}</span>
       <span class="kv" style="margin-left:auto">${fmt(e.created_at)}</span></div>
     ${inner}</div>`;
 }
 
-// Rysuje graf: focal w środku, powiązane wokół. Krawędzie low-confidence (CDN)
-// są szare i przerywane; high-confidence — niebieskie.
+// Graf: focal w środku, powiązane wokół. Krawędzie low-confidence (CDN) szare/przerywane.
 function buildGraph(focal, related) {
   const W = 380, H = 250, cx = W / 2, cy = H / 2, R = 90;
   const n = related.length;
@@ -245,21 +338,21 @@ function buildGraph(focal, related) {
   const edges = pts.map(p => {
     const low = p.rl.confidence === "low";
     return `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}"
-      stroke="${low ? "#8b949e" : "#58a6ff"}" stroke-width="${low ? 1 : 2}"
+      stroke="${low ? "#8b98a9" : "#4c9ffe"}" stroke-width="${low ? 1 : 2}"
       ${low ? 'stroke-dasharray="4 3"' : ""} opacity="0.7"/>`;
   }).join("");
   const nodeSvg = (x, y, label, id, focalNode, conf) => {
     const r = focalNode ? 11 : 8;
-    const fill = focalNode ? "#58a6ff" : (conf === "low" ? "#30363d" : "#238636");
+    const fill = focalNode ? "#4c9ffe" : (conf === "low" ? "#2b3543" : "#238636");
     const lab = (label || "").length > 16 ? label.slice(0, 15) + "…" : label;
     return `<g class="gnode" data-id="${id}" style="cursor:pointer">
-      <circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" stroke="#0d1117" stroke-width="2"/>
-      <text x="${x}" y="${(y - r - 4).toFixed(1)}" fill="#c9d1d9" font-size="10" text-anchor="middle">${esc(lab)}</text>
+      <circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" stroke="#0b0f14" stroke-width="2"/>
+      <text x="${x}" y="${(y - r - 4).toFixed(1)}" fill="#e6edf3" font-size="10" text-anchor="middle">${esc(lab)}</text>
     </g>`;
   };
   const nodes = nodeSvg(cx, cy, focal.value, focal.id, true, null) +
     pts.map(p => nodeSvg(p.x.toFixed(1), p.y.toFixed(1), p.rl.value, p.rl.id, false, p.rl.confidence)).join("");
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;background:var(--bg);border:1px solid var(--border);border-radius:10px;margin-bottom:8px">
     ${edges}${nodes}</svg>`;
 }
 
@@ -269,13 +362,11 @@ async function showDetail(id, force = false) {
   const det = $("#detail");
   if (!ok) { det.innerHTML = `<div class="err">Nie udało się pobrać.</div>`; return; }
   const enr = body.enrichments || [];
-  // Sygnatura = id + liczba i źródła wzbogaceń. Przerysuj tylko przy zmianie
-  // (żeby nie zwijać rozwiniętego "surowego RDAP" przy auto-odświeżaniu).
   const sig = id + "|" + enr.length + "|" + enr.map(e => e.source).join(",");
   if (!force && sig === lastDetailSig) return;
   lastDetailSig = sig;
 
-  // Dociągamy powiązania (pivoty) — inne IOC dzielące IP z tym wskaźnikiem.
+  // Powiązania (pivoty).
   let pivotHtml = "";
   const piv = await api(`/iocs/${id}/pivots`);
   if (piv.ok && piv.body) {
@@ -291,9 +382,9 @@ async function showDetail(id, force = false) {
         const badge = low
           ? `<span class="badge lowconf">CDN · niska pewność</span>`
           : `<span class="badge clean">wysoka pewność</span>`;
-        return `<div class="rel" data-id="${i.id}">↔ <span class="type">${esc(i.type)}</span>
+        return `<div class="rel" data-id="${i.id}">↔ <span class="type type-${esc(i.type)}">${esc(i.type)}</span>
           <span class="val">${esc(i.value)}</span> ${badge}
-          <div class="kv" style="margin-top:2px">wspólne: ${(i.shared_ips||[]).map(esc).join(", ")}</div></div>`;
+          <div class="kv" style="margin-top:3px">wspólne: ${(i.shared_ips||[]).map(esc).join(", ")}</div></div>`;
       }).join("");
     } else {
       pivotHtml += `<div class="empty">Brak powiązań przez wspólne IP.</div>`;
@@ -301,15 +392,15 @@ async function showDetail(id, force = false) {
   }
 
   det.innerHTML = `
-    <div class="kv" style="margin-bottom:12px;">
-      <div><b>${esc(body.value)}</b> <span class="type">${esc(body.type)}</span></div>
-      <div>źródło: ${esc(body.source)} · dodano ${fmt(body.created_at)}</div>
+    <div class="dhead">
+      <span class="big">${esc(body.value)}</span>
+      <span class="type type-${esc(body.type)}">${esc(body.type)}</span>
     </div>
+    <div class="dmeta">źródło: ${esc(body.source) || "—"} · dodano ${fmt(body.created_at)}</div>
     ${enr.length ? enr.map(renderEnrichment).join("")
                  : `<div class="empty">Brak wzbogaceń jeszcze — worker dorabia je w tle.</div>`}
     ${pivotHtml}`;
 
-  // Klik w powiązanie (lista lub węzeł grafu) → przejdź do tamtego IOC.
   det.querySelectorAll(".rel, .gnode").forEach(el =>
     el.addEventListener("click", () => {
       const nid = el.dataset.id;
@@ -343,25 +434,27 @@ $("#addForm").addEventListener("submit", async (ev) => {
 });
 
 document.querySelectorAll("#filters button").forEach(b =>
-  b.addEventListener("click", () => { currentFilter = b.dataset.t; loadList(true); })
+  b.addEventListener("click", () => {
+    document.querySelectorAll("#filters button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    currentFilter = b.dataset.t;
+    loadList(true);
+  })
 );
 
-// Pierwsze załadowanie.
 loadList(true);
 
-// Realtime przez SSE — serwer sam wypycha zdarzenie, gdy pojawi się wzbogacenie.
+// Realtime przez SSE.
 function startSSE() {
   const es = new EventSource("/events");
   es.addEventListener("enrichment", (ev) => {
-    // ev.data = ioc_id, który właśnie dostał nowe wzbogacenie.
     if (String(ev.data) === String(selectedId)) showDetail(selectedId);
-    loadList(); // diff — przerysuje tylko gdy trzeba
+    loadList();
   });
-  // Gdy połączenie padnie, EventSource sam próbuje się wznowić.
 }
 startSSE();
 
-// Zapasowy, rzadki polling co 15 s — bezpiecznik, gdyby SSE nie zadziałało.
+// Zapasowy polling co 15 s (bezpiecznik).
 setInterval(() => {
   loadList();
   if (selectedId) showDetail(selectedId);

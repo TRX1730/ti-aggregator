@@ -1,0 +1,3 @@
+# Normalizacja końców linii — koniec ostrzeżeń "LF will be replaced by CRLF".
+# W repozytorium trzymamy LF; Git sam ogarnia lokalny system.
+* text=auto eol=lf
