@@ -59,11 +59,50 @@ def enrich_whois(ioc_type: str, value: str) -> dict:
     return {"highlights": _rdap_highlights(data), "raw": data}
 
 
+# Cache listy węzłów wyjściowych Tora — pobieramy raz, trzymamy w pamięci.
+TOR_LIST_URL = "https://check.torproject.org/torbulkexitlist"
+TOR_TTL = 3600  # odśwież listę raz na godzinę (w sekundach)
+_tor_cache = {"ips": set(), "fetched_at": 0.0}
+
+
+def _get_tor_exits() -> set:
+    """Zwraca zbiór IP węzłów wyjściowych Tora. Pobiera z sieci tylko gdy cache jest stary."""
+    now = time.time()
+    if not _tor_cache["ips"] or (now - _tor_cache["fetched_at"] > TOR_TTL):
+        resp = requests.get(TOR_LIST_URL, timeout=15)
+        resp.raise_for_status()
+        # Lista to zwykły tekst: jedno IP na linię (pomijamy komentarze i puste).
+        ips = {
+            line.strip()
+            for line in resp.text.splitlines()
+            if line.strip() and not line.startswith("#")
+        }
+        _tor_cache["ips"] = ips
+        _tor_cache["fetched_at"] = now
+        print(f"[worker] pobrano listę Tor exit ({len(ips)} IP)", flush=True)
+    return _tor_cache["ips"]
+
+
+def enrich_tor(ioc_type: str, value: str) -> dict:
+    """Sprawdza, czy IP jest znanym węzłem wyjściowym Tora."""
+    if ioc_type != "ip":
+        return {"error": "tor: dotyczy tylko IP"}
+    try:
+        exits = _get_tor_exits()
+    except Exception as e:
+        return {"error": str(e)}
+    return {
+        "is_tor_exit": value in exits,
+        "source_list": "Tor Project bulk exit list",
+    }
+
+
 # Lista źródeł: (nazwa, jakich typów IOC dotyczy, funkcja wzbogacająca).
 # Dodanie kolejnego źródła (np. VirusTotal) = jedna linijka tutaj + funkcja wyżej.
 ENRICHERS = [
     ("dns", {"ip", "domain"}, enrich_dns),
     ("whois", {"ip", "domain"}, enrich_whois),
+    ("tor", {"ip"}, enrich_tor),
 ]
 
 
