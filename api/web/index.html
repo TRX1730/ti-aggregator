@@ -52,6 +52,7 @@
   .badge.tor { background: rgba(248,81,73,.15); color: var(--danger); border: 1px solid var(--danger); }
   .badge.clean { background: rgba(63,185,80,.12); color: var(--ok); border: 1px solid var(--ok); }
   .badge.cf { background: rgba(240,136,62,.15); color: #f0883e; border: 1px solid #f0883e; }
+  .badge.lowconf { background: var(--chip); color: var(--muted); border: 1px solid var(--border); }
   .kv { font-size: 12px; color: var(--muted); }
   .kv b { color: var(--text); font-weight: 600; }
   .err { color: var(--danger); font-size: 12px; font-family: monospace; }
@@ -232,6 +233,36 @@ function renderEnrichment(e) {
     ${inner}</div>`;
 }
 
+// Rysuje graf: focal w środku, powiązane wokół. Krawędzie low-confidence (CDN)
+// są szare i przerywane; high-confidence — niebieskie.
+function buildGraph(focal, related) {
+  const W = 380, H = 250, cx = W / 2, cy = H / 2, R = 90;
+  const n = related.length;
+  const pts = related.map((rl, i) => {
+    const a = (2 * Math.PI * i) / Math.max(n, 1) - Math.PI / 2;
+    return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), rl };
+  });
+  const edges = pts.map(p => {
+    const low = p.rl.confidence === "low";
+    return `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}"
+      stroke="${low ? "#8b949e" : "#58a6ff"}" stroke-width="${low ? 1 : 2}"
+      ${low ? 'stroke-dasharray="4 3"' : ""} opacity="0.7"/>`;
+  }).join("");
+  const nodeSvg = (x, y, label, id, focalNode, conf) => {
+    const r = focalNode ? 11 : 8;
+    const fill = focalNode ? "#58a6ff" : (conf === "low" ? "#30363d" : "#238636");
+    const lab = (label || "").length > 16 ? label.slice(0, 15) + "…" : label;
+    return `<g class="gnode" data-id="${id}" style="cursor:pointer">
+      <circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" stroke="#0d1117" stroke-width="2"/>
+      <text x="${x}" y="${(y - r - 4).toFixed(1)}" fill="#c9d1d9" font-size="10" text-anchor="middle">${esc(lab)}</text>
+    </g>`;
+  };
+  const nodes = nodeSvg(cx, cy, focal.value, focal.id, true, null) +
+    pts.map(p => nodeSvg(p.x.toFixed(1), p.y.toFixed(1), p.rl.value, p.rl.id, false, p.rl.confidence)).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+    ${edges}${nodes}</svg>`;
+}
+
 async function showDetail(id, force = false) {
   if (String(id) !== String(selectedId)) { selectedId = id; force = true; }
   const { ok, body } = await api(`/iocs/${id}`);
@@ -252,8 +283,18 @@ async function showDetail(id, force = false) {
     const ips = piv.body.pivot_ips || [];
     pivotHtml = `<h3>Powiązania (pivoty)</h3>`;
     if (rel.length) {
-      pivotHtml += `<div class="kv" style="margin-bottom:6px">wspólne IP: ${ips.map(esc).join(", ") || "—"}</div>` +
-        rel.map(i => `<div class="rel" data-id="${i.id}">↔ <span class="type">${esc(i.type)}</span> <span class="val">${esc(i.value)}</span></div>`).join("");
+      const ipsStr = ips.map(o => esc(o.ip) + (o.cdn ? " (CDN)" : "")).join(", ");
+      pivotHtml += buildGraph({ id: body.id, value: body.value }, rel);
+      pivotHtml += `<div class="kv" style="margin:6px 0">wspólne IP: ${ipsStr || "—"}</div>`;
+      pivotHtml += rel.map(i => {
+        const low = i.confidence === "low";
+        const badge = low
+          ? `<span class="badge lowconf">CDN · niska pewność</span>`
+          : `<span class="badge clean">wysoka pewność</span>`;
+        return `<div class="rel" data-id="${i.id}">↔ <span class="type">${esc(i.type)}</span>
+          <span class="val">${esc(i.value)}</span> ${badge}
+          <div class="kv" style="margin-top:2px">wspólne: ${(i.shared_ips||[]).map(esc).join(", ")}</div></div>`;
+      }).join("");
     } else {
       pivotHtml += `<div class="empty">Brak powiązań przez wspólne IP.</div>`;
     }
@@ -268,9 +309,12 @@ async function showDetail(id, force = false) {
                  : `<div class="empty">Brak wzbogaceń jeszcze — worker dorabia je w tle.</div>`}
     ${pivotHtml}`;
 
-  // Klik w powiązanie → przejdź do tamtego IOC.
-  det.querySelectorAll(".rel").forEach(el =>
-    el.addEventListener("click", () => showDetail(el.dataset.id, true))
+  // Klik w powiązanie (lista lub węzeł grafu) → przejdź do tamtego IOC.
+  det.querySelectorAll(".rel, .gnode").forEach(el =>
+    el.addEventListener("click", () => {
+      const nid = el.dataset.id;
+      if (nid && String(nid) !== String(id)) showDetail(nid, true);
+    })
   );
 }
 
