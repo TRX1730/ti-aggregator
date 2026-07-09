@@ -1,0 +1,78 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// server trzyma zależności, których potrzebują handlery — na razie tylko bazę.
+// Dzięki temu handlery mają dostęp do bazy przez s.db, bez zmiennych globalnych.
+type server struct {
+	db *pgxpool.Pool
+}
+
+func main() {
+	port := os.Getenv("API_PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	// Adres bazy dostajemy ze zmiennej środowiskowej (ustawiamy ją w docker-compose).
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("brak DATABASE_URL")
+	}
+
+	// pgxpool.New tworzy PULĘ połączeń do Postgresa.
+	// Pula = zestaw gotowych połączeń wielokrotnego użytku (szybciej niż łączyć się za każdym razem).
+	pool, err := pgxpool.New(context.Background(), dbURL)
+	if err != nil {
+		log.Fatalf("nie mogę utworzyć puli połączeń: %v", err)
+	}
+	defer pool.Close() // zamknij pulę, gdy program się kończy
+
+	srv := &server{db: pool}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", srv.healthHandler)
+	mux.HandleFunc("POST /iocs", srv.createIOC)      // wzorzec — gotowy
+	mux.HandleFunc("GET /iocs/{id}", srv.getIOC)     // Twoje zadanie do napisania
+
+	addr := ":" + port
+	log.Printf("API startuje na %s", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// healthHandler mówi teraz DWIE rzeczy: że backend żyje ORAZ czy baza jest osiągalna.
+func (s *server) healthHandler(w http.ResponseWriter, r *http.Request) {
+	// Kontekst z limitem czasu: dajemy bazie max 2 sekundy na odpowiedź,
+	// żeby jedno zawieszone połączenie nie blokowało nas w nieskończoność.
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	status := "ok"
+	dbStatus := "ok"
+	httpCode := http.StatusOK
+
+	// Ping wysyła do bazy najprostsze możliwe zapytanie, żeby sprawdzić, czy odpowiada.
+	if err := s.db.Ping(ctx); err != nil {
+		status = "degraded"
+		dbStatus = "unreachable"
+		httpCode = http.StatusServiceUnavailable // 503 = usługa częściowo niedostępna
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpCode)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": status,
+		"db":     dbStatus,
+	})
+}

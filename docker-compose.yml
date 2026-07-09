@@ -1,0 +1,42 @@
+services:
+  # Baza danych — tu ląduje wszystko na stałe
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ti
+      POSTGRES_PASSWORD: ti
+      POSTGRES_DB: ti
+    ports:
+      - "5432:5432"          # baza dostępna z Twojego kompa na localhost:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ti"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Backend API w Go — Docker sam go zbuduje z folderu ./api
+  api:
+    build: ./api
+    environment:
+      API_PORT: "8080"
+      # Uwaga: host to "db" (nazwa usługi), nie localhost — kontenery gadają po nazwach.
+      DATABASE_URL: "postgres://ti:ti@db:5432/ti?sslmode=disable"
+    ports:
+      - "8080:8080"          # API dostępne na http://localhost:8080
+    depends_on:
+      db:
+        condition: service_healthy   # API startuje dopiero, gdy baza jest gotowa
+
+  # Adminer — prosty panel w przeglądarce do podglądania bazy (localhost:8081)
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8081:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
