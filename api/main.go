@@ -22,7 +22,8 @@ var staticFiles embed.FS
 // server trzyma zależności, których potrzebują handlery — na razie tylko bazę.
 // Dzięki temu handlery mają dostęp do bazy przez s.db, bez zmiennych globalnych.
 type server struct {
-	db *pgxpool.Pool
+	db  *pgxpool.Pool
+	hub *hub // rozsyła zdarzenia SSE do przeglądarek
 }
 
 func main() {
@@ -45,13 +46,17 @@ func main() {
 	}
 	defer pool.Close() // zamknij pulę, gdy program się kończy
 
-	srv := &server{db: pool}
+	srv := &server{db: pool, hub: newHub()}
+
+	// Goroutine nasłuchująca NOTIFY z Postgresa i rozsyłająca do przeglądarek.
+	go srv.runListener(context.Background(), dbURL)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", srv.healthHandler)
-	mux.HandleFunc("POST /iocs", srv.createIOC)      // wzorzec — gotowy
-	mux.HandleFunc("GET /iocs/{id}", srv.getIOC)     // Twoje zadanie do napisania
+	mux.HandleFunc("POST /iocs", srv.createIOC)
+	mux.HandleFunc("GET /iocs/{id}", srv.getIOC)
 	mux.HandleFunc("GET /iocs", srv.listIOCs)
+	mux.HandleFunc("GET /events", srv.eventsHandler) // strumień SSE
 
 	// Serwujemy frontend spod "/". Trasy API wyżej są bardziej szczegółowe,
 	// więc mają pierwszeństwo — "/" łapie całą resztę (index.html itd.).

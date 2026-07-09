@@ -28,6 +28,10 @@
   th { color: var(--muted); font-weight: 600; }
   tr.row { cursor: pointer; }
   tr.row:hover { background: var(--chip); }
+  tr.row.sel { background: var(--chip); box-shadow: inset 3px 0 0 var(--accent); }
+  .live { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
   .type { font-family: monospace; font-size: 12px; padding: 2px 6px; border-radius: 4px; background: var(--chip); }
   .val { font-family: monospace; }
   form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -47,6 +51,7 @@
   .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
   .badge.tor { background: rgba(248,81,73,.15); color: var(--danger); border: 1px solid var(--danger); }
   .badge.clean { background: rgba(63,185,80,.12); color: var(--ok); border: 1px solid var(--ok); }
+  .badge.cf { background: rgba(240,136,62,.15); color: #f0883e; border: 1px solid #f0883e; }
   .kv { font-size: 12px; color: var(--muted); }
   .kv b { color: var(--text); font-weight: 600; }
   .err { color: var(--danger); font-size: 12px; font-family: monospace; }
@@ -58,7 +63,8 @@
 </head>
 <body>
   <h1>TI Aggregator</h1>
-  <div class="sub">Wskaźniki zagrożeń + automatyczne wzbogacanie (DNS · whois/RDAP · Tor)</div>
+  <div class="sub">Wskaźniki zagrożeń + automatyczne wzbogacanie (DNS · whois · Tor · CDN · crt.sh · tech)
+    &nbsp;·&nbsp; <span class="live"><span class="dot"></span> auto-odświeżanie</span></div>
 
   <div class="layout">
     <div class="panel">
@@ -106,17 +112,26 @@ async function api(path, opts) {
 }
 
 let currentFilter = "";
+let selectedId = null;
+let lastListSig = "";
+let lastDetailSig = "";
 
-async function loadList() {
+async function loadList(force = false) {
   const q = currentFilter ? `?type=${currentFilter}` : "";
   const { ok, body } = await api(`/iocs${q}`);
+  if (!ok || !Array.isArray(body)) return;
   const wrap = $("#listWrap");
-  if (!ok || !Array.isArray(body) || body.length === 0) {
+  if (body.length === 0) {
     wrap.innerHTML = `<div class="empty">Brak wskaźników.</div>`;
+    lastListSig = "empty|" + currentFilter;
     return;
   }
+  // Sygnatura = filtr + lista id. Jeśli bez zmian, nie przerysowujemy (brak migania).
+  const sig = currentFilter + "|" + body.map(i => i.id).join(",");
+  if (!force && sig === lastListSig) return;
+  lastListSig = sig;
   const rows = body.map(i => `
-    <tr class="row" data-id="${i.id}">
+    <tr class="row ${String(i.id) === String(selectedId) ? "sel" : ""}" data-id="${i.id}">
       <td><span class="type">${esc(i.type)}</span></td>
       <td class="val">${esc(i.value)}</td>
       <td>${esc(i.source)}</td>
@@ -125,7 +140,11 @@ async function loadList() {
     <thead><tr><th>typ</th><th>wartość</th><th>źródło</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
   wrap.querySelectorAll("tr.row").forEach(tr =>
-    tr.addEventListener("click", () => showDetail(tr.dataset.id))
+    tr.addEventListener("click", () => {
+      wrap.querySelectorAll("tr.row").forEach(x => x.classList.remove("sel"));
+      tr.classList.add("sel");
+      showDetail(tr.dataset.id, true);
+    })
   );
 }
 
@@ -153,6 +172,54 @@ function renderEnrichment(e) {
         <details><summary class="kv" style="cursor:pointer">surowy RDAP</summary>
         <pre>${esc(JSON.stringify(d.raw ?? d, null, 2))}</pre></details>`;
     }
+  } else if (e.source === "cdn") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else {
+      const badge = d.behind_cdn
+        ? `<span class="badge cf">${esc((d.provider||"cdn").toUpperCase())}</span>`
+        : `<span class="badge clean">bez CDN/WAF</span>`;
+      let extra = `<div class="kv"><b>IP:</b> ${(d.resolved_ips||[]).map(esc).join(", ")}</div>`;
+      if (d.behind_cdn) {
+        const cands = d.origin_candidates || [];
+        if (cands.length) {
+          extra += `<div class="kv" style="margin-top:6px"><b>możliwy origin (heurystyka):</b></div>` +
+            cands.map(c => `<div class="kv">↳ ${esc(c.subdomain)} → <b>${c.ips.map(esc).join(", ")}</b></div>`).join("");
+          extra += `<div class="err" style="margin-top:6px">${esc(d.origin_note||"")}</div>`;
+        } else {
+          extra += `<div class="kv" style="margin-top:6px">origin: nie znaleziono heurystyką</div>`;
+        }
+      }
+      inner = badge + extra;
+    }
+  } else if (e.source === "crt") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else {
+      const subs = d.subdomains || [];
+      inner = `<div class="kv"><b>${d.count || 0}</b> subdomen z certyfikatów (crt.sh)</div>` +
+        (subs.length ? `<details><summary class="kv" style="cursor:pointer">pokaż subdomeny</summary>
+          <pre>${esc(subs.join("\n"))}</pre></details>` : "");
+    }
+  } else if (e.source === "tech") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else {
+      const labels = { cms:"CMS", js_lib:"biblioteki JS", analytics:"analityka", external:"usługi zewn." };
+      const parts = [];
+      if (d.frontend) parts.push(`<b>frontend:</b> ${d.frontend.map(esc).join(", ")}`);
+      if (d.backend) parts.push(`<b>backend:</b> ${d.backend.map(esc).join(", ")}`);
+      if (d.api) parts.push(`<b>API:</b> ${d.api.map(esc).join(", ")}`);
+      if (d.stack) {
+        for (const [cat, items] of Object.entries(d.stack)) {
+          if (cat === "framework") continue; // pokazane wyżej jako "frontend"
+          parts.push(`<b>${esc(labels[cat] || cat)}:</b> ${items.map(esc).join(", ")}`);
+        }
+      }
+      if (d.server) {
+        const srv = Object.entries(d.server).map(([k,v]) => `${esc(k)}: ${esc(v)}`).join(" · ");
+        parts.push(`<b>serwer:</b> ${srv}`);
+      }
+      inner = `<div class="kv">${parts.length ? parts.join("<br>") : "brak wyraźnych sygnatur"}</div>
+        <div class="kv" style="margin-top:4px;opacity:.7">${esc(d.note||"")}</div>`;
+    }
   } else {
     inner = `<pre>${esc(JSON.stringify(d, null, 2))}</pre>`;
   }
@@ -162,11 +229,17 @@ function renderEnrichment(e) {
     ${inner}</div>`;
 }
 
-async function showDetail(id) {
+async function showDetail(id, force = false) {
+  if (String(id) !== String(selectedId)) { selectedId = id; force = true; }
   const { ok, body } = await api(`/iocs/${id}`);
   const det = $("#detail");
   if (!ok) { det.innerHTML = `<div class="err">Nie udało się pobrać.</div>`; return; }
   const enr = body.enrichments || [];
+  // Sygnatura = id + liczba i źródła wzbogaceń. Przerysuj tylko przy zmianie
+  // (żeby nie zwijać rozwiniętego "surowego RDAP" przy auto-odświeżaniu).
+  const sig = id + "|" + enr.length + "|" + enr.map(e => e.source).join(",");
+  if (!force && sig === lastDetailSig) return;
+  lastDetailSig = sig;
   det.innerHTML = `
     <div class="kv" style="margin-bottom:12px;">
       <div><b>${esc(body.value)}</b> <span class="type">${esc(body.type)}</span></div>
@@ -192,7 +265,7 @@ $("#addForm").addEventListener("submit", async (ev) => {
   if (ok) {
     msg.className = "msg ok"; msg.textContent = "dodano ✓";
     $("#fValue").value = ""; $("#fSource").value = "";
-    loadList();
+    loadList(true);
   } else {
     msg.className = "msg bad";
     msg.textContent = (body && body.error) ? body.error : `błąd ${status}`;
@@ -201,10 +274,29 @@ $("#addForm").addEventListener("submit", async (ev) => {
 });
 
 document.querySelectorAll("#filters button").forEach(b =>
-  b.addEventListener("click", () => { currentFilter = b.dataset.t; loadList(); })
+  b.addEventListener("click", () => { currentFilter = b.dataset.t; loadList(true); })
 );
 
-loadList();
+// Pierwsze załadowanie.
+loadList(true);
+
+// Realtime przez SSE — serwer sam wypycha zdarzenie, gdy pojawi się wzbogacenie.
+function startSSE() {
+  const es = new EventSource("/events");
+  es.addEventListener("enrichment", (ev) => {
+    // ev.data = ioc_id, który właśnie dostał nowe wzbogacenie.
+    if (String(ev.data) === String(selectedId)) showDetail(selectedId);
+    loadList(); // diff — przerysuje tylko gdy trzeba
+  });
+  // Gdy połączenie padnie, EventSource sam próbuje się wznowić.
+}
+startSSE();
+
+// Zapasowy, rzadki polling co 15 s — bezpiecznik, gdyby SSE nie zadziałało.
+setInterval(() => {
+  loadList();
+  if (selectedId) showDetail(selectedId);
+}, 15000);
 </script>
 </body>
 </html>
