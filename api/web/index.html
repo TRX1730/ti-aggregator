@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TI Aggregator</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --danger: #f85149; --ok: #3fb950; --chip: #21262d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, sans-serif;
+    background: var(--bg); color: var(--text); padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .panel h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  tr.row { cursor: pointer; }
+  tr.row:hover { background: var(--chip); }
+  .type { font-family: monospace; font-size: 12px; padding: 2px 6px; border-radius: 4px; background: var(--chip); }
+  .val { font-family: monospace; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  select, input {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px; font-size: 13px;
+  }
+  input { flex: 1; min-width: 120px; }
+  button {
+    background: var(--accent); color: #0d1117; border: none; border-radius: 6px;
+    padding: 8px 14px; font-weight: 600; cursor: pointer; font-size: 13px;
+  }
+  button.ghost { background: var(--chip); color: var(--text); }
+  .enr { border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+  .enr-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .src { font-family: monospace; font-size: 11px; text-transform: uppercase; color: var(--muted); }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+  .badge.tor { background: rgba(248,81,73,.15); color: var(--danger); border: 1px solid var(--danger); }
+  .badge.clean { background: rgba(63,185,80,.12); color: var(--ok); border: 1px solid var(--ok); }
+  .kv { font-size: 12px; color: var(--muted); }
+  .kv b { color: var(--text); font-weight: 600; }
+  .err { color: var(--danger); font-size: 12px; font-family: monospace; }
+  .empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+  pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow: auto; font-size: 11px; max-height: 200px; }
+  .msg { font-size: 12px; margin-left: 8px; }
+  .msg.ok { color: var(--ok); } .msg.bad { color: var(--danger); }
+</style>
+</head>
+<body>
+  <h1>TI Aggregator</h1>
+  <div class="sub">Wskaźniki zagrożeń + automatyczne wzbogacanie (DNS · whois/RDAP · Tor)</div>
+
+  <div class="layout">
+    <div class="panel">
+      <h2>Wskaźniki (IOC)</h2>
+      <form id="addForm">
+        <select id="fType">
+          <option value="ip">ip</option>
+          <option value="domain">domain</option>
+          <option value="hash">hash</option>
+          <option value="url">url</option>
+        </select>
+        <input id="fValue" placeholder="np. 185.220.101.5 lub example.com" required>
+        <input id="fSource" placeholder="źródło (opcjonalnie)">
+        <button type="submit">Dodaj</button>
+        <span id="addMsg" class="msg"></span>
+      </form>
+      <div id="filters" style="margin-bottom:12px;">
+        <button class="ghost" data-t="">wszystkie</button>
+        <button class="ghost" data-t="ip">ip</button>
+        <button class="ghost" data-t="domain">domain</button>
+      </div>
+      <div id="listWrap"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Szczegóły</h2>
+      <div id="detail"><div class="empty">Kliknij wskaźnik po lewej, żeby zobaczyć wzbogacenia.</div></div>
+    </div>
+  </div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => (
+    { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]
+  ));
+}
+function fmt(d) { return d ? new Date(d).toLocaleString("pl-PL") : ""; }
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, body };
+}
+
+let currentFilter = "";
+
+async function loadList() {
+  const q = currentFilter ? `?type=${currentFilter}` : "";
+  const { ok, body } = await api(`/iocs${q}`);
+  const wrap = $("#listWrap");
+  if (!ok || !Array.isArray(body) || body.length === 0) {
+    wrap.innerHTML = `<div class="empty">Brak wskaźników.</div>`;
+    return;
+  }
+  const rows = body.map(i => `
+    <tr class="row" data-id="${i.id}">
+      <td><span class="type">${esc(i.type)}</span></td>
+      <td class="val">${esc(i.value)}</td>
+      <td>${esc(i.source)}</td>
+    </tr>`).join("");
+  wrap.innerHTML = `<table>
+    <thead><tr><th>typ</th><th>wartość</th><th>źródło</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+  wrap.querySelectorAll("tr.row").forEach(tr =>
+    tr.addEventListener("click", () => showDetail(tr.dataset.id))
+  );
+}
+
+function renderEnrichment(e) {
+  const d = e.data || {};
+  let inner = "";
+  if (e.source === "tor") {
+    inner = d.is_tor_exit
+      ? `<span class="badge tor">WĘZEŁ TOR</span> <span class="kv">atrybucja geo bez sensu</span>`
+      : `<span class="badge clean">nie-Tor</span>`;
+  } else if (e.source === "dns") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else if (d.resolved_ips) inner = `<div class="kv"><b>IP:</b> ${d.resolved_ips.map(esc).join(", ")}</div>`;
+    else if (d.hostname) inner = `<div class="kv"><b>host:</b> ${esc(d.hostname)}</div>`;
+  } else if (e.source === "whois") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else {
+      const h = d.highlights || {};
+      const parts = [];
+      if (h.country) parts.push(`<b>kraj:</b> ${esc(h.country)}`);
+      if (h.name) parts.push(`<b>nazwa:</b> ${esc(h.name)}`);
+      if (h.handle) parts.push(`<b>handle:</b> ${esc(h.handle)}`);
+      if (h.ldhName) parts.push(`<b>domena:</b> ${esc(h.ldhName)}`);
+      inner = `<div class="kv">${parts.join(" &nbsp;·&nbsp; ") || "—"}</div>
+        <details><summary class="kv" style="cursor:pointer">surowy RDAP</summary>
+        <pre>${esc(JSON.stringify(d.raw ?? d, null, 2))}</pre></details>`;
+    }
+  } else {
+    inner = `<pre>${esc(JSON.stringify(d, null, 2))}</pre>`;
+  }
+  return `<div class="enr">
+    <div class="enr-head"><span class="src">${esc(e.source)}</span>
+      <span class="kv" style="margin-left:auto">${fmt(e.created_at)}</span></div>
+    ${inner}</div>`;
+}
+
+async function showDetail(id) {
+  const { ok, body } = await api(`/iocs/${id}`);
+  const det = $("#detail");
+  if (!ok) { det.innerHTML = `<div class="err">Nie udało się pobrać.</div>`; return; }
+  const enr = body.enrichments || [];
+  det.innerHTML = `
+    <div class="kv" style="margin-bottom:12px;">
+      <div><b>${esc(body.value)}</b> <span class="type">${esc(body.type)}</span></div>
+      <div>źródło: ${esc(body.source)} · dodano ${fmt(body.created_at)}</div>
+    </div>
+    ${enr.length ? enr.map(renderEnrichment).join("")
+                 : `<div class="empty">Brak wzbogaceń jeszcze — worker dorabia je w tle (odśwież za chwilę).</div>`}`;
+}
+
+$("#addForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const payload = {
+    type: $("#fType").value,
+    value: $("#fValue").value.trim(),
+    source: $("#fSource").value.trim(),
+  };
+  const msg = $("#addMsg");
+  const { ok, status, body } = await api("/iocs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (ok) {
+    msg.className = "msg ok"; msg.textContent = "dodano ✓";
+    $("#fValue").value = ""; $("#fSource").value = "";
+    loadList();
+  } else {
+    msg.className = "msg bad";
+    msg.textContent = (body && body.error) ? body.error : `błąd ${status}`;
+  }
+  setTimeout(() => { msg.textContent = ""; }, 4000);
+});
+
+document.querySelectorAll("#filters button").forEach(b =>
+  b.addEventListener("click", () => { currentFilter = b.dataset.t; loadList(); })
+);
+
+loadList();
+</script>
+</body>
+</html>

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +12,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// go:embed wkompilowuje pliki z folderu web/ w binarkę serwera.
+// Dzięki temu API serwuje frontend bez dodatkowych plików w kontenerze.
+//
+//go:embed web
+var staticFiles embed.FS
 
 // server trzyma zależności, których potrzebują handlery — na razie tylko bazę.
 // Dzięki temu handlery mają dostęp do bazy przez s.db, bez zmiennych globalnych.
@@ -44,6 +52,15 @@ func main() {
 	mux.HandleFunc("POST /iocs", srv.createIOC)      // wzorzec — gotowy
 	mux.HandleFunc("GET /iocs/{id}", srv.getIOC)     // Twoje zadanie do napisania
 	mux.HandleFunc("GET /iocs", srv.listIOCs)
+
+	// Serwujemy frontend spod "/". Trasy API wyżej są bardziej szczegółowe,
+	// więc mają pierwszeństwo — "/" łapie całą resztę (index.html itd.).
+	webRoot, err := fs.Sub(staticFiles, "web")
+	if err != nil {
+		log.Fatal(err)
+	}
+	mux.Handle("GET /", http.FileServerFS(webRoot))
+
 	addr := ":" + port
 	log.Printf("API startuje na %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
