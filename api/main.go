@@ -56,7 +56,8 @@ func main() {
 	mux.HandleFunc("POST /iocs", srv.createIOC)
 	mux.HandleFunc("GET /iocs/{id}", srv.getIOC)
 	mux.HandleFunc("GET /iocs", srv.listIOCs)
-	mux.HandleFunc("GET /events", srv.eventsHandler) // strumień SSE
+	mux.HandleFunc("GET /iocs/{id}/pivots", srv.getPivots) // powiązania
+	mux.HandleFunc("GET /events", srv.eventsHandler)       // strumień SSE
 
 	// Serwujemy frontend spod "/". Trasy API wyżej są bardziej szczegółowe,
 	// więc mają pierwszeństwo — "/" łapie całą resztę (index.html itd.).

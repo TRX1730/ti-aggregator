@@ -56,6 +56,9 @@
   .kv b { color: var(--text); font-weight: 600; }
   .err { color: var(--danger); font-size: 12px; font-family: monospace; }
   .empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+  h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin: 18px 0 8px; }
+  .rel { cursor: pointer; padding: 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
+  .rel:hover { background: var(--chip); box-shadow: inset 3px 0 0 var(--accent); }
   pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow: auto; font-size: 11px; max-height: 200px; }
   .msg { font-size: 12px; margin-left: 8px; }
   .msg.ok { color: var(--ok); } .msg.bad { color: var(--danger); }
@@ -240,13 +243,35 @@ async function showDetail(id, force = false) {
   const sig = id + "|" + enr.length + "|" + enr.map(e => e.source).join(",");
   if (!force && sig === lastDetailSig) return;
   lastDetailSig = sig;
+
+  // Dociągamy powiązania (pivoty) — inne IOC dzielące IP z tym wskaźnikiem.
+  let pivotHtml = "";
+  const piv = await api(`/iocs/${id}/pivots`);
+  if (piv.ok && piv.body) {
+    const rel = piv.body.related || [];
+    const ips = piv.body.pivot_ips || [];
+    pivotHtml = `<h3>Powiązania (pivoty)</h3>`;
+    if (rel.length) {
+      pivotHtml += `<div class="kv" style="margin-bottom:6px">wspólne IP: ${ips.map(esc).join(", ") || "—"}</div>` +
+        rel.map(i => `<div class="rel" data-id="${i.id}">↔ <span class="type">${esc(i.type)}</span> <span class="val">${esc(i.value)}</span></div>`).join("");
+    } else {
+      pivotHtml += `<div class="empty">Brak powiązań przez wspólne IP.</div>`;
+    }
+  }
+
   det.innerHTML = `
     <div class="kv" style="margin-bottom:12px;">
       <div><b>${esc(body.value)}</b> <span class="type">${esc(body.type)}</span></div>
       <div>źródło: ${esc(body.source)} · dodano ${fmt(body.created_at)}</div>
     </div>
     ${enr.length ? enr.map(renderEnrichment).join("")
-                 : `<div class="empty">Brak wzbogaceń jeszcze — worker dorabia je w tle (odśwież za chwilę).</div>`}`;
+                 : `<div class="empty">Brak wzbogaceń jeszcze — worker dorabia je w tle.</div>`}
+    ${pivotHtml}`;
+
+  // Klik w powiązanie → przejdź do tamtego IOC.
+  det.querySelectorAll(".rel").forEach(el =>
+    el.addEventListener("click", () => showDetail(el.dataset.id, true))
+  );
 }
 
 $("#addForm").addEventListener("submit", async (ev) => {
