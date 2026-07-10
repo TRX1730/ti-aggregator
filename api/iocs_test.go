@@ -16,9 +16,9 @@ func TestValidateInput(t *testing.T) {
 	}
 
 	invalid := []createIOCInput{
-		{Type: "cokolwiek", Value: "1.2.3.4"}, // nieznany typ
-		{Type: "ip", Value: "to-nie-ip"},      // niepoprawne IP
-		{Type: "domain", Value: ""},           // puste value
+		{Type: "cokolwiek", Value: "1.2.3.4"},
+		{Type: "ip", Value: "to-nie-ip"},
+		{Type: "domain", Value: ""},
 	}
 	for _, in := range invalid {
 		if err := validateInput(in); err == nil {

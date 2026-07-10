@@ -1,12 +1,7 @@
-# Sekrety i konfiguracja lokalna — NIGDY do repo
 .env
-
-# Go — artefakty budowania (u nas build idzie w Dockerze, ale na wszelki wypadek)
 /api/server
 *.exe
 *.out
-
-# System / edytor
 .DS_Store
 Thumbs.db
 .vscode/

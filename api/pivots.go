@@ -13,7 +13,7 @@ import (
 
 type pivotIP struct {
 	IP  string `json:"ip"`
-	CDN bool   `json:"cdn"` // czy to IP należące do CDN (wtedy powiązanie jest słabe)
+	CDN bool   `json:"cdn"`
 }
 
 type pivotNode struct {
@@ -23,7 +23,7 @@ type pivotNode struct {
 	Source     string    `json:"source"`
 	CreatedAt  time.Time `json:"created_at"`
 	SharedIPs  []string  `json:"shared_ips"`
-	Confidence string    `json:"confidence"` // "high" albo "low" (gdy wspólne są tylko IP z CDN)
+	Confidence string    `json:"confidence"`
 }
 
 type pivotResult struct {
@@ -60,7 +60,6 @@ func (s *server) getPivots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Zbiór IP, o których wiemy, że należą do CDN — powiązania przez nie są słabe.
 	cdnIPs := s.cdnIPSet(ctx)
 
 	ipList := make([]string, 0, len(focalIPs))
@@ -70,7 +69,6 @@ func (s *server) getPivots(w http.ResponseWriter, r *http.Request) {
 		ipList = append(ipList, ip)
 	}
 
-	// Powiązane IOC dzielące którekolwiek z tych IP.
 	rel, err := s.db.Query(ctx, `
 		SELECT DISTINCT i.id, i.type, i.value, i.source, i.created_at
 		FROM iocs i
@@ -103,9 +101,6 @@ func (s *server) getPivots(w http.ResponseWriter, r *http.Request) {
 	}
 	rel.Close()
 
-	// Dla każdego powiązania policz wspólne IP i pewność.
-	// Pewność "low", gdy WSZYSTKIE wspólne IP należą do CDN (bo na CDN siedzą miliony
-	// niepowiązanych domen — taki "wspólny adres" nic nie znaczy).
 	for i := range related {
 		theirIPs := s.ipsForIOC(ctx, related[i].ID, related[i].Type, related[i].Value)
 		shared := []string{}
@@ -130,7 +125,6 @@ func (s *server) getPivots(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// ipsForIOC zbiera IP powiązane z IOC: jego własne (gdy to IP) + resolved_ips z dns/cdn.
 func (s *server) ipsForIOC(ctx context.Context, id int64, iocType, iocValue string) map[string]struct{} {
 	ipset := map[string]struct{}{}
 	if iocType == "ip" {
@@ -157,7 +151,6 @@ func (s *server) ipsForIOC(ctx context.Context, id int64, iocType, iocValue stri
 	return ipset
 }
 
-// cdnIPSet zwraca zbiór IP oznaczonych jako CDN (z enrichmentów cdn z behind_cdn=true).
 func (s *server) cdnIPSet(ctx context.Context) map[string]struct{} {
 	set := map[string]struct{}{}
 	rows, err := s.db.Query(ctx, `

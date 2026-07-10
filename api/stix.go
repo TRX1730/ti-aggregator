@@ -10,28 +10,24 @@ import (
 	"time"
 )
 
-// uuid5 — deterministyczny UUID v5 z nazwy. Dzięki temu ten sam IOC ma zawsze
-// to samo STIX id (MISP nie zrobi duplikatów przy ponownym imporcie).
 func uuid5(name string) string {
 	ns := []byte{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1,
-		0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8} // namespace URL
+		0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8}
 	h := sha1.New()
 	h.Write(ns)
 	h.Write([]byte(name))
 	sum := h.Sum(nil)[:16]
-	sum[6] = (sum[6] & 0x0f) | 0x50 // wersja 5
-	sum[8] = (sum[8] & 0x3f) | 0x80 // wariant RFC 4122
+	sum[6] = (sum[6] & 0x0f) | 0x50
+	sum[8] = (sum[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", sum[0:4], sum[4:6], sum[6:8], sum[8:10], sum[10:16])
 }
 
-// escapeSTIX — w patternach STIX wartości są w apostrofach; escapujemy specjalne znaki.
 func escapeSTIX(v string) string {
 	v = strings.ReplaceAll(v, `\`, `\\`)
 	v = strings.ReplaceAll(v, `'`, `\'`)
 	return v
 }
 
-// stixPattern — buduje wzorzec STIX odpowiedni dla typu IOC.
 func stixPattern(t, v string) string {
 	e := escapeSTIX(v)
 	switch t {
@@ -47,7 +43,6 @@ func stixPattern(t, v string) string {
 	return ""
 }
 
-// exportSTIX: zwraca wszystkie IOC jako bundle STIX 2.1 (do pobrania / importu do MISP).
 func (s *server) exportSTIX(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()

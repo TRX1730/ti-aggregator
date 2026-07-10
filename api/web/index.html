@@ -20,7 +20,6 @@
   }
   code, .mono { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; }
 
-  /* ── App bar ── */
   .appbar { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
   .logo { width: 38px; height: 38px; flex: none; }
   .brand h1 { font-size: 19px; margin: 0; letter-spacing: .3px; }
@@ -31,7 +30,6 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: pulse 1.6s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 
-  /* ── Stats ── */
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
   .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
   .stat .n { font-size: 24px; font-weight: 700; }
@@ -40,7 +38,6 @@
   .stat.domain .n { color: var(--ok); }
   .stat.other .n { color: var(--purple); }
 
-  /* ── Layout / panels ── */
   .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2,1fr); } }
   .panel {
@@ -50,7 +47,6 @@
   }
   .panel h2 { font-size: 12px; margin: 0 0 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; }
 
-  /* ── Form ── */
   form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   select, input, textarea {
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
@@ -74,7 +70,6 @@
     border: 1px solid var(--border); border-radius: 8px; padding: 7px 13px; font-size: 12px; }
   .btn-export:hover { border-color: var(--ok); color: var(--ok); }
 
-  /* ── List ── */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
   td { padding: 10px; border-top: 1px solid var(--border); }
@@ -84,7 +79,6 @@
   .val { font-family: ui-monospace, monospace; color: var(--text); }
   .src-cell { color: var(--muted); font-size: 12px; }
 
-  /* ── Type pill ── */
   .type { font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
     background: var(--chip); color: var(--muted); border: 1px solid var(--border); }
   .type.type-ip { color: var(--accent); border-color: rgba(76,159,254,.4); }
@@ -92,12 +86,10 @@
   .type.type-hash { color: var(--purple); border-color: rgba(163,113,247,.4); }
   .type.type-url { color: var(--warn); border-color: rgba(240,136,62,.4); }
 
-  /* ── Detail header ── */
   .dhead { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
   .dhead .big { font-size: 18px; font-weight: 700; font-family: ui-monospace, monospace; word-break: break-all; }
   .dmeta { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
 
-  /* ── Risk banner ── */
   .risk { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border);
     border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
   .risk-score { width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center;
@@ -111,7 +103,6 @@
   .risk.low .risk-score { background: rgba(63,185,80,.18); color: var(--ok); }
   .risk.unknown .risk-score { background: var(--chip); color: var(--muted); }
 
-  /* ── Enrichment cards ── */
   .enr { background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--border);
     border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
   .enr-dns { border-left-color: var(--accent); }
@@ -239,7 +230,6 @@ function updateStats(all) {
 }
 
 async function loadList(force = false) {
-  // Pobieramy WSZYSTKIE (do statystyk), filtrujemy po stronie klienta.
   const { ok, body } = await api(`/iocs`);
   if (!ok || !Array.isArray(body)) return;
   updateStats(body);
@@ -353,7 +343,6 @@ function renderEnrichment(e) {
     ${inner}</div>`;
 }
 
-// Graf: focal w środku, powiązane wokół. Krawędzie low-confidence (CDN) szare/przerywane.
 function buildGraph(focal, related) {
   const W = 380, H = 250, cx = W / 2, cy = H / 2, R = 90;
   const n = related.length;
@@ -392,7 +381,6 @@ async function showDetail(id, force = false) {
   if (!force && sig === lastDetailSig) return;
   lastDetailSig = sig;
 
-  // Powiązania (pivoty).
   let pivotHtml = "";
   const piv = await api(`/iocs/${id}/pivots`);
   if (piv.ok && piv.body) {
@@ -505,7 +493,6 @@ document.querySelectorAll("#filters button").forEach(b =>
 
 loadList(true);
 
-// Realtime przez SSE.
 function startSSE() {
   const es = new EventSource("/events");
   es.addEventListener("enrichment", (ev) => {
@@ -515,7 +502,6 @@ function startSSE() {
 }
 startSSE();
 
-// Zapasowy polling co 15 s (bezpiecznik).
 setInterval(() => {
   loadList();
   if (selectedId) showDetail(selectedId);

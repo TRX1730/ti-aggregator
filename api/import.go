@@ -13,7 +13,6 @@ import (
 var ipRe = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
 var domainRe = regexp.MustCompile(`\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,24}\b`)
 
-// Końcówki, które wyglądają jak domena, ale to pliki/ścieżki z logów — pomijamy.
 var fileExts = map[string]bool{
 	"html": true, "htm": true, "php": true, "css": true, "js": true, "json": true,
 	"png": true, "jpg": true, "jpeg": true, "gif": true, "svg": true, "txt": true,
@@ -28,9 +27,8 @@ type importResult struct {
 	Skipped      int `json:"skipped"`
 }
 
-// importLogs: przyjmuje surowy tekst (log), wyciąga IP i domeny, tworzy IOC hurtowo.
 func (s *server) importLogs(w http.ResponseWriter, r *http.Request) {
-	raw, err := io.ReadAll(io.LimitReader(r.Body, 2<<20)) // limit 2 MB
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "nie mogę odczytać treści")
 		return
@@ -41,14 +39,12 @@ func (s *server) importLogs(w http.ResponseWriter, r *http.Request) {
 		source = "import"
 	}
 
-	// Wyciągamy unikalne IP (z walidacją).
 	ipset := map[string]struct{}{}
 	for _, m := range ipRe.FindAllString(text, -1) {
 		if net.ParseIP(m) != nil {
 			ipset[m] = struct{}{}
 		}
 	}
-	// Wyciągamy unikalne domeny (pomijając to, co jest IP lub plikiem).
 	domset := map[string]struct{}{}
 	for _, m := range domainRe.FindAllString(text, -1) {
 		d := strings.ToLower(m)

@@ -11,10 +11,7 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 POLL_SECONDS = 5
 
 
-# ── ŹRÓDŁA WZBOGACEŃ ───────────────────────────────────────────────────────
-
 def enrich_dns(ioc_type: str, value: str) -> dict:
-    """DNS: domena -> IP, IP -> nazwa hosta."""
     result = {}
     try:
         if ioc_type == "domain":
@@ -30,7 +27,6 @@ def enrich_dns(ioc_type: str, value: str) -> dict:
 
 
 def _rdap_highlights(data: dict) -> dict:
-    """Wyciąga kilka najważniejszych pól z RDAP (całość i tak zapisujemy w 'raw')."""
     h = {}
     for k in ("handle", "ldhName", "name", "country", "startAddress", "endAddress", "type"):
         if data.get(k) is not None:
@@ -41,7 +37,6 @@ def _rdap_highlights(data: dict) -> dict:
 
 
 def enrich_whois(ioc_type: str, value: str) -> dict:
-    """whois przez RDAP (nowoczesny, JSON-owy następca whois)."""
     if ioc_type == "domain":
         url = f"https://rdap.org/domain/{value}"
     elif ioc_type == "ip":
@@ -56,23 +51,19 @@ def enrich_whois(ioc_type: str, value: str) -> dict:
         data = resp.json()
     except Exception as e:
         return {"error": str(e)}
-    # Zapisujemy skrót (highlights) + surowy RDAP (raw) jako źródło prawdy.
     return {"highlights": _rdap_highlights(data), "raw": data}
 
 
-# Cache listy węzłów wyjściowych Tora — pobieramy raz, trzymamy w pamięci.
 TOR_LIST_URL = "https://check.torproject.org/torbulkexitlist"
-TOR_TTL = 3600  # odśwież listę raz na godzinę (w sekundach)
+TOR_TTL = 3600
 _tor_cache = {"ips": set(), "fetched_at": 0.0}
 
 
 def _get_tor_exits() -> set:
-    """Zwraca zbiór IP węzłów wyjściowych Tora. Pobiera z sieci tylko gdy cache jest stary."""
     now = time.time()
     if not _tor_cache["ips"] or (now - _tor_cache["fetched_at"] > TOR_TTL):
         resp = requests.get(TOR_LIST_URL, timeout=15)
         resp.raise_for_status()
-        # Lista to zwykły tekst: jedno IP na linię (pomijamy komentarze i puste).
         ips = {
             line.strip()
             for line in resp.text.splitlines()
@@ -85,7 +76,6 @@ def _get_tor_exits() -> set:
 
 
 def enrich_tor(ioc_type: str, value: str) -> dict:
-    """Sprawdza, czy IP jest znanym węzłem wyjściowym Tora."""
     if ioc_type != "ip":
         return {"error": "tor: dotyczy tylko IP"}
     try:
@@ -98,24 +88,20 @@ def enrich_tor(ioc_type: str, value: str) -> dict:
     }
 
 
-# ── Wykrywanie CDN/WAF (Cloudflare, Akamai, Fastly, CloudFront) + origin ───
 CF_URLS = ["https://www.cloudflare.com/ips-v4", "https://www.cloudflare.com/ips-v6"]
-CF_TTL = 24 * 3600  # zakresy Cloudflare zmieniają się rzadko — odśwież raz na dobę
+CF_TTL = 24 * 3600
 _cf_cache = {"nets": [], "fetched_at": 0.0}
 
-# Dostawcy bez publicznej listy IP — wykrywani po wzorcach w reverse DNS.
 CDN_HOST_PATTERNS = {
     "akamai": ["akamai", "akamaitechnologies", "akamaiedge", "edgekey", "edgesuite"],
     "fastly": ["fastly"],
     "cloudfront": ["cloudfront"],
 }
 
-# Typowe subdomeny, które czasem wskazują wprost na origin (omijają CDN).
 ORIGIN_PREFIXES = ["direct", "origin", "ftp", "cpanel", "webmail", "mail", "server", "vpn", "dev"]
 
 
 def _get_cloudflare_nets() -> list:
-    """Zwraca listę zakresów IP Cloudflare. Pobiera z sieci tylko gdy cache stary."""
     now = time.time()
     if not _cf_cache["nets"] or (now - _cf_cache["fetched_at"] > CF_TTL):
         nets = []
@@ -155,11 +141,8 @@ def _reverse_dns(ip: str) -> str:
 
 
 def _detect_provider(ips: list, cf_nets: list):
-    """Zwraca nazwę dostawcy CDN/WAF dla listy IP, albo None."""
-    # Cloudflare — po zakresach IP (pewne).
     if any(_ip_in_nets(ip, cf_nets) for ip in ips):
         return "cloudflare"
-    # Reszta — po reverse DNS (heurystyka).
     for ip in ips:
         host = _reverse_dns(ip)
         if host:
@@ -170,7 +153,6 @@ def _detect_provider(ips: list, cf_nets: list):
 
 
 def enrich_cdn(ioc_type: str, value: str) -> dict:
-    """Wykrywa CDN/WAF domeny (Cloudflare/Akamai/Fastly/CloudFront) i heurystycznie szuka origin."""
     if ioc_type != "domain":
         return {"error": "cdn: dotyczy tylko domen"}
     try:
@@ -189,7 +171,6 @@ def enrich_cdn(ioc_type: str, value: str) -> dict:
         candidates = []
         for prefix in ORIGIN_PREFIXES:
             host = f"{prefix}.{value}"
-            # kandydat = subdomena wskazująca poza jakikolwiek wykryty CDN
             non_cdn = [ip for ip in _resolve(host) if _detect_provider([ip], cf_nets) is None]
             if non_cdn:
                 candidates.append({"subdomain": host, "ips": non_cdn})
@@ -200,7 +181,6 @@ def enrich_cdn(ioc_type: str, value: str) -> dict:
 
 
 def enrich_crtsh(ioc_type: str, value: str) -> dict:
-    """crt.sh (Certificate Transparency): subdomeny z wystawionych certyfikatów."""
     if ioc_type != "domain":
         return {"error": "crt.sh: dotyczy tylko domen"}
     url = f"https://crt.sh/?q=%25.{value}&output=json"
@@ -217,10 +197,9 @@ def enrich_crtsh(ioc_type: str, value: str) -> dict:
             if name.endswith(value):
                 subs.add(name)
     subs = sorted(subs)
-    return {"count": len(subs), "subdomains": subs[:200]}  # limit, żeby nie przesadzić
+    return {"count": len(subs), "subdomains": subs[:200]}
 
 
-# Sygnatury w HTML, pogrupowane w kategorie.
 TECH_SIGNATURES = {
     "cms": {
         "WordPress": ["wp-content", "wp-includes"],
@@ -264,7 +243,6 @@ TECH_SIGNATURES = {
     },
 }
 
-# Backend rozpoznawany po nazwach ciasteczek sesyjnych.
 COOKIE_SIGNATURES = {
     "phpsessid": "PHP",
     "laravel_session": "Laravel",
@@ -275,7 +253,6 @@ COOKIE_SIGNATURES = {
     "asp.net": "ASP.NET",
 }
 
-# Backend rozpoznawany po nagłówkach serwera (Server / X-Powered-By).
 SERVER_BACKEND = {
     "express": "Express / Node.js",
     "gunicorn": "Python (Gunicorn)",
@@ -298,7 +275,6 @@ GRAPHQL_PATHS = ["/graphql", "/api/graphql", "/v1/graphql"]
 
 
 def _detect_graphql(base: str):
-    """Aktywnie sonduje typowe ścieżki GraphQL minimalną introspekcją."""
     for path in GRAPHQL_PATHS:
         try:
             r = requests.post(
@@ -317,7 +293,6 @@ def _detect_graphql(base: str):
 
 
 def enrich_tech(ioc_type: str, value: str) -> dict:
-    """Fingerprint stacku: CMS, frameworki, biblioteki, analityka, usługi, backend, API/GraphQL."""
     if ioc_type not in ("domain", "url"):
         return {"error": "tech: dotyczy domen/URL"}
     url = value if value.startswith("http") else f"https://{value}"
@@ -334,7 +309,6 @@ def enrich_tech(ioc_type: str, value: str) -> dict:
     body = resp.text[:400000].lower()
     result = {"status_code": resp.status_code, "final_url": str(resp.url)}
 
-    # Nagłówki serwera.
     server_info = {}
     for hk in ("server", "x-powered-by", "x-generator", "x-aspnet-version", "via"):
         if hk in h:
@@ -342,7 +316,6 @@ def enrich_tech(ioc_type: str, value: str) -> dict:
     if server_info:
         result["server"] = server_info
 
-    # Backend — z ciasteczek sesyjnych ORAZ z nagłówków serwera (język/runtime).
     set_cookie = h.get("set-cookie", "").lower()
     server_blob = " ".join(server_info.values()).lower()
     backends = {name for needle, name in COOKIE_SIGNATURES.items() if needle in set_cookie}
@@ -350,7 +323,6 @@ def enrich_tech(ioc_type: str, value: str) -> dict:
     if backends:
         result["backend"] = sorted(backends)
 
-    # Sygnatury HTML pogrupowane w kategorie.
     stack = {}
     for category, sigs in TECH_SIGNATURES.items():
         hits = sorted(name for name, markers in sigs.items() if any(m in body for m in markers))
@@ -359,11 +331,9 @@ def enrich_tech(ioc_type: str, value: str) -> dict:
     if stack:
         result["stack"] = stack
 
-    # Frontend: wykryte frameworki albo "vanilla", gdy żadnego nie widać.
     fw = stack.get("framework", [])
     result["frontend"] = fw if fw else ["vanilla / brak wykrytego frameworka JS"]
 
-    # API / GraphQL — pasywnie z HTML + aktywna sonda GraphQL.
     api_hints = []
     if "swagger" in body or "openapi" in body:
         api_hints.append("Swagger/OpenAPI")
@@ -379,8 +349,6 @@ def enrich_tech(ioc_type: str, value: str) -> dict:
     return result
 
 
-# Lista źródeł: (nazwa, jakich typów IOC dotyczy, funkcja wzbogacająca).
-# Dodanie kolejnego źródła (np. VirusTotal) = jedna linijka tutaj + funkcja wyżej.
 ENRICHERS = [
     ("dns", {"ip", "domain"}, enrich_dns),
     ("whois", {"ip", "domain"}, enrich_whois),
@@ -391,12 +359,8 @@ ENRICHERS = [
 ]
 
 
-# ── LOGIKA WORKERA ─────────────────────────────────────────────────────────
-
 def process_source(conn, source: str, types: set, fn) -> int:
-    """Znajduje IOC bez danego wzbogacenia, dorabia je i zapisuje. Zwraca ile obrobił."""
     with conn.cursor() as cur:
-        # type = ANY(%s): psycopg zamienia listę Pythona na tablicę Postgresa.
         cur.execute(
             """
             SELECT i.id, i.type, i.value
@@ -418,11 +382,9 @@ def process_source(conn, source: str, types: set, fn) -> int:
                 "INSERT INTO enrichments (ioc_id, source, data) VALUES (%s, %s, %s)",
                 (ioc_id, source, Json(data)),
             )
-            # Powiadamiamy przez kanał Postgresa — API to usłyszy i wypchnie do przeglądarki.
-            # NOTIFY dochodzi dopiero po COMMIT (poniżej), więc kolejność jest OK.
             cur.execute("SELECT pg_notify('enrichments', %s)", (str(ioc_id),))
             print(f"[worker] {source}: IOC {ioc_id} ({value})", flush=True)
-            time.sleep(0.5)  # grzecznie wobec zewnętrznych serwerów
+            time.sleep(0.5)
 
         conn.commit()
         return len(rows)

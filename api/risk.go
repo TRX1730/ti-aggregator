@@ -6,17 +6,14 @@ import (
 	"time"
 )
 
-// riskResult — ocena ryzyka IOC złożona z przejrzystych, wyjaśnionych sygnałów.
 type riskResult struct {
-	Score   int      `json:"score"`   // 0–100
-	Level   string   `json:"level"`   // low / medium / high / unknown
-	Reasons []string `json:"reasons"` // co złożyło się na wynik
+	Score   int      `json:"score"`
+	Level   string   `json:"level"`
+	Reasons []string `json:"reasons"`
 }
 
-// Słowa w etykiecie źródła, które sugerują złośliwość.
 var maliciousHints = []string{"scan", "malware", "phish", "attack", "c2", "botnet", "brute", "exploit", "spam"}
 
-// computeRisk buduje ocenę z dostępnych wzbogaceń. Wszystko jest jawne i uzasadnione.
 func computeRisk(ioc IOC, ens []Enrichment) riskResult {
 	score := 0
 	reasons := []string{}
@@ -64,7 +61,6 @@ func computeRisk(ioc IOC, ens []Enrichment) riskResult {
 	return riskResult{Score: score, Level: level, Reasons: reasons}
 }
 
-// registrationAgeDays wyciąga z RDAP datę rejestracji i zwraca wiek w dniach.
 func registrationAgeDays(raw json.RawMessage) (int, bool) {
 	var d struct {
 		Raw struct {
