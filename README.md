@@ -1,5 +1,8 @@
 # TI Aggregator
 
+[![CI](https://github.com/TRX1730/ti-aggregator/actions/workflows/ci.yml/badge.svg)](https://github.com/TRX1730/ti-aggregator/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Samodzielne narzędzie threat intelligence: zbiera wskaźniki zagrożeń (IOC), **automatycznie wzbogaca** je z wielu źródeł, wykrywa **powiązania** między nimi i eksportuje w formacie **STIX 2.1** (kompatybilnym z MISP). Architektura **event-driven** — od workera po interfejs wszystko reaguje na zdarzenia, bez pollingu.
 
 > Projekt budowany jako portfolio + nauka backendu + praktyczne narzędzie recon/TI.
@@ -91,3 +94,7 @@ Pełna instrukcja obsługi: [USAGE.md](USAGE.md)
 - `tech` to fingerprint orientacyjny, nie pełny Wappalyzer — niektóre backendy (np. Go) nie zdradzają się w nagłówkach.
 - Heurystyka origin za CDN bywa nieskuteczna — CDN celowo ukrywa origin; wyniki są oznaczone jako niepewne.
 - Eksport STIX jest zaimplementowany; pełny serwer TAXII 2.1 — nie (bundle wystarcza do importu w MISP).
+
+## Licencja
+
+MIT — patrz [LICENSE](LICENSE).
