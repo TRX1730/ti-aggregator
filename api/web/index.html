@@ -52,11 +52,14 @@
 
   /* ── Form ── */
   form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-  select, input {
+  select, input, textarea {
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 8px; padding: 9px 10px; font-size: 13px; outline: none;
+    border-radius: 8px; padding: 9px 10px; font-size: 13px; outline: none; font-family: inherit;
   }
-  select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(76,159,254,.15); }
+  textarea { width: 100%; resize: vertical; }
+  select:focus, input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(76,159,254,.15); }
+  .import-box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+  .import-box summary { color: var(--muted); font-size: 12px; cursor: pointer; }
   input { flex: 1; min-width: 140px; }
   button {
     background: linear-gradient(180deg, var(--accent), var(--accent2)); color: #06101c; border: none;
@@ -93,6 +96,20 @@
   .dhead { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
   .dhead .big { font-size: 18px; font-weight: 700; font-family: ui-monospace, monospace; word-break: break-all; }
   .dmeta { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+
+  /* ── Risk banner ── */
+  .risk { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
+  .risk-score { width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-weight: 700; font-size: 16px; flex: none; }
+  .risk-level { font-weight: 700; font-size: 13px; margin-bottom: 2px; }
+  .risk.high { border-color: var(--danger); background: rgba(248,81,73,.08); }
+  .risk.high .risk-score { background: rgba(248,81,73,.2); color: var(--danger); }
+  .risk.medium { border-color: var(--warn); background: rgba(240,136,62,.08); }
+  .risk.medium .risk-score { background: rgba(240,136,62,.2); color: var(--warn); }
+  .risk.low { border-color: var(--ok); background: rgba(63,185,80,.06); }
+  .risk.low .risk-score { background: rgba(63,185,80,.18); color: var(--ok); }
+  .risk.unknown .risk-score { background: var(--chip); color: var(--muted); }
 
   /* ── Enrichment cards ── */
   .enr { background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--border);
@@ -164,6 +181,15 @@
         <button type="submit">Dodaj</button>
         <span id="addMsg" class="msg"></span>
       </form>
+      <details class="import-box">
+        <summary>📥 Import z logów — wklej log, wyciągnie IP i domeny</summary>
+        <textarea id="impText" rows="4" placeholder="wklej tu zawartość logu (np. dostępowego)..." style="margin-top:8px"></textarea>
+        <div style="display:flex; gap:8px; margin-top:8px; align-items:center">
+          <input id="impSource" placeholder="źródło (np. logi-klienta)" style="flex:1">
+          <button id="impBtn" type="button">Importuj</button>
+          <span id="impMsg" class="msg"></span>
+        </div>
+      </details>
       <div id="filters" class="chips">
         <button class="chip active" data-t="">wszystkie</button>
         <button class="chip" data-t="ip">ip</button>
@@ -391,12 +417,22 @@ async function showDetail(id, force = false) {
     }
   }
 
+  const risk = body.risk || { level: "unknown", score: 0, reasons: [] };
+  const riskLabel = { high: "WYSOKIE", medium: "ŚREDNIE", low: "NISKIE", unknown: "NIEZNANE" };
+  const riskHtml = `<div class="risk ${esc(risk.level)}">
+    <div class="risk-score">${risk.score}</div>
+    <div>
+      <div class="risk-level">Ryzyko: ${riskLabel[risk.level] || "?"}</div>
+      <div class="kv">${(risk.reasons || []).map(esc).join(" · ") || "brak wyraźnych sygnałów ryzyka"}</div>
+    </div></div>`;
+
   det.innerHTML = `
     <div class="dhead">
       <span class="big">${esc(body.value)}</span>
       <span class="type type-${esc(body.type)}">${esc(body.type)}</span>
     </div>
     <div class="dmeta">źródło: ${esc(body.source) || "—"} · dodano ${fmt(body.created_at)}</div>
+    ${riskHtml}
     ${enr.length ? enr.map(renderEnrichment).join("")
                  : `<div class="empty">Brak wzbogaceń jeszcze — worker dorabia je w tle.</div>`}
     ${pivotHtml}`;
@@ -431,6 +467,31 @@ $("#addForm").addEventListener("submit", async (ev) => {
     msg.textContent = (body && body.error) ? body.error : `błąd ${status}`;
   }
   setTimeout(() => { msg.textContent = ""; }, 4000);
+});
+
+$("#impBtn").addEventListener("click", async () => {
+  const text = $("#impText").value;
+  const msg = $("#impMsg");
+  if (!text.trim()) { msg.className = "msg bad"; msg.textContent = "wklej najpierw log"; return; }
+  const src = encodeURIComponent($("#impSource").value.trim() || "import");
+  msg.className = "msg"; msg.textContent = "importuję…";
+  try {
+    const res = await fetch(`/import?source=${src}`, {
+      method: "POST", headers: { "Content-Type": "text/plain" }, body: text,
+    });
+    const b = await res.json().catch(() => ({}));
+    if (res.ok) {
+      msg.className = "msg ok";
+      msg.textContent = `dodano ${b.created}, pominięto ${b.skipped} (IP: ${b.found_ips}, domeny: ${b.found_domains})`;
+      $("#impText").value = "";
+      loadList(true);
+    } else {
+      msg.className = "msg bad";
+      msg.textContent = b.error || "błąd importu";
+    }
+  } catch (e) {
+    msg.className = "msg bad"; msg.textContent = "błąd sieci";
+  }
 });
 
 document.querySelectorAll("#filters button").forEach(b =>

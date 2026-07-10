@@ -38,6 +38,7 @@ type Enrichment struct {
 type IOCWithEnrichments struct {
 	IOC
 	Enrichments []Enrichment `json:"enrichments"`
+	Risk        riskResult   `json:"risk"`
 }
 
 // createIOCInput to TYLKO to, co klient ma prawo podać przy tworzeniu.
@@ -169,8 +170,10 @@ func (s *server) getIOC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 6) Sukces: IOC razem z jego wzbogaceniami.
-	writeJSON(w, http.StatusOK, IOCWithEnrichments{IOC: out, Enrichments: enrichments})
+	// 6) Sukces: IOC + wzbogacenia + wyliczona ocena ryzyka.
+	resp := IOCWithEnrichments{IOC: out, Enrichments: enrichments}
+	resp.Risk = computeRisk(out, enrichments)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // ── HANDLER: GET /iocs (lista z opcjonalnym filtrem ?type=) ───────────────

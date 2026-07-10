@@ -58,6 +58,7 @@ func main() {
 	mux.HandleFunc("GET /iocs", srv.listIOCs)
 	mux.HandleFunc("GET /iocs/{id}/pivots", srv.getPivots) // powiązania
 	mux.HandleFunc("GET /export/stix", srv.exportSTIX)     // eksport STIX 2.1
+	mux.HandleFunc("POST /import", srv.importLogs)         // import IOC z logów
 	mux.HandleFunc("GET /events", srv.eventsHandler)       // strumień SSE
 
 	// Serwujemy frontend spod "/". Trasy API wyżej są bardziej szczegółowe,
