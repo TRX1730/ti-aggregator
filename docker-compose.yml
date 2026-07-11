@@ -30,6 +30,17 @@ services:
     build: ./worker
     environment:
       DATABASE_URL: "postgres://ti:ti@db:5432/ti?sslmode=disable"
+      VT_API_KEY: ${VT_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  recon-worker:
+    build: ./worker
+    command: ["python", "-u", "recon_worker.py"]
+    environment:
+      DATABASE_URL: "postgres://ti:ti@db:5432/ti?sslmode=disable"
     depends_on:
       db:
         condition: service_healthy

@@ -188,3 +188,24 @@ func (s *server) listIOCs(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, list)
 }
+
+func (s *server) deleteIOC(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id musi być liczbą")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	tag, err := s.db.Exec(ctx, `DELETE FROM iocs WHERE id=$1`, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "nie udało się usunąć IOC")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "nie znaleziono IOC")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

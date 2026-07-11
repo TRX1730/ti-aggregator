@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -32,6 +33,27 @@ func computeRisk(ioc IOC, ens []Enrichment) riskResult {
 			if days, ok := registrationAgeDays(e.Data); ok && days >= 0 && days < 90 {
 				score += 30
 				reasons = append(reasons, "zarejestrowany < 90 dni temu (+30)")
+			}
+		case "blocklist":
+			var d struct {
+				OnBlocklist bool     `json:"on_blocklist"`
+				Sources     []string `json:"sources"`
+			}
+			if json.Unmarshal(e.Data, &d) == nil && d.OnBlocklist {
+				score += 50
+				reasons = append(reasons, "na publicznej blackliście CTI (+50)")
+			}
+		case "virustotal":
+			var d struct {
+				Malicious int `json:"malicious"`
+			}
+			if json.Unmarshal(e.Data, &d) == nil && d.Malicious > 0 {
+				add := d.Malicious * 10
+				if add > 50 {
+					add = 50
+				}
+				score += add
+				reasons = append(reasons, fmt.Sprintf("VirusTotal: %d silników flaguje jako złośliwe (+%d)", d.Malicious, add))
 			}
 		}
 	}

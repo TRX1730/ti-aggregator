@@ -1,7 +1,9 @@
 import os
+import re
 import time
 import socket
 import ipaddress
+import dns.resolver
 
 import psycopg
 from psycopg.types.json import Json
@@ -206,10 +208,36 @@ TECH_SIGNATURES = {
         "Drupal": ["/sites/default/", "drupal-settings-json", "drupal.js"],
         "Joomla": ["/media/jui/", "joomla"],
         "Ghost": ["/ghost/", "ghost-"],
-        "Shopify": ["cdn.shopify.com"],
         "Wix": ["static.wixstatic.com", "wix.com"],
         "Squarespace": ["squarespace"],
         "Webflow": ["webflow"],
+        "TYPO3": ["typo3temp", "typo3conf"],
+        "Sitecore": ["/sitecore/", "sitecore"],
+        "Adobe Experience Manager": ["/etc.clientlibs/", "/content/dam/", "cq-"],
+        "Contentful": ["contentful"],
+    },
+    "commerce": {
+        "Shopify": ["cdn.shopify.com", "myshopify.com"],
+        "Magento / Adobe Commerce": ["/static/version", "mage/", "magento"],
+        "WooCommerce": ["woocommerce"],
+        "PrestaShop": ["prestashop"],
+        "BigCommerce": ["bigcommerce"],
+        "SAP Commerce (Hybris)": ["hybris", "/_ui/"],
+    },
+    "enterprise": {
+        "Salesforce": ["force.com", "salesforce"],
+        "ServiceNow": ["servicenow"],
+        "SAP": ["sap.com", "/sap/"],
+        "Oracle": ["oracle"],
+    },
+    "hosting": {
+        "AWS": ["s3.amazonaws.com", "cloudfront.net", "elasticbeanstalk", "awsstatic"],
+        "Google Cloud": ["storage.googleapis.com", "appspot.com", "googleusercontent"],
+        "Microsoft Azure": ["azurewebsites.net", "azureedge.net", "azure"],
+        "Netlify": ["netlify"],
+        "Vercel": ["vercel"],
+        "Heroku": ["herokuapp.com"],
+        "Fastly": ["fastly"],
     },
     "framework": {
         "React": ["data-reactroot", "__react", "react.production"],
@@ -349,6 +377,188 @@ def enrich_tech(ioc_type: str, value: str) -> dict:
     return result
 
 
+def enrich_dnsrecords(ioc_type: str, value: str) -> dict:
+    if ioc_type != "domain":
+        return {"error": "dns_records: dotyczy tylko domen"}
+    result = {}
+    for rtype in ("MX", "NS", "TXT"):
+        try:
+            ans = dns.resolver.resolve(value, rtype, lifetime=8)
+            result[rtype] = [str(r).strip().strip('"') for r in ans]
+        except Exception:
+            pass
+    spf = [t for t in result.get("TXT", []) if "v=spf1" in t.lower()]
+    if spf:
+        result["SPF"] = spf
+    try:
+        dmarc = dns.resolver.resolve("_dmarc." + value, "TXT", lifetime=8)
+        result["DMARC"] = [str(r).strip().strip('"') for r in dmarc]
+    except Exception:
+        pass
+    if not result:
+        result["note"] = "brak rekordów albo nie rozwiązano"
+    return result
+
+
+def enrich_wayback(ioc_type: str, value: str) -> dict:
+    if ioc_type != "domain":
+        return {"error": "wayback: dotyczy tylko domen"}
+    url = (f"http://web.archive.org/cdx/search/cdx?url={value}/*"
+           f"&output=json&fl=original&collapse=urlkey&limit=300")
+    try:
+        resp = requests.get(url, timeout=20, headers={"User-Agent": "ti-platform"})
+        resp.raise_for_status()
+        rows = resp.json()
+    except Exception as e:
+        return {"error": str(e)}
+    urls = [r[0] for r in rows[1:]] if isinstance(rows, list) and len(rows) > 1 else []
+    return {"count": len(urls), "sample": urls[:50]}
+
+
+def enrich_geoip(ioc_type: str, value: str) -> dict:
+    if ioc_type != "ip":
+        return {"error": "geoip: dotyczy tylko IP"}
+    try:
+        r = requests.get(f"http://ip-api.com/json/{value}?fields=status,country,city,isp,org,as", timeout=10)
+        data = r.json()
+    except Exception as e:
+        return {"error": str(e)}
+    if data.get("status") != "success":
+        return {"error": "geoip: brak danych"}
+    result = {"country": data.get("country"), "city": data.get("city"),
+              "isp": data.get("isp"), "org": data.get("org"), "as": data.get("as")}
+    m = re.match(r"AS(\d+)", data.get("as") or "")
+    if m:
+        try:
+            rr = requests.get(
+                f"https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS{m.group(1)}",
+                timeout=15)
+            prefixes = [p["prefix"] for p in rr.json().get("data", {}).get("prefixes", [])]
+            result["asn_prefixes_count"] = len(prefixes)
+            result["asn_prefixes_sample"] = prefixes[:20]
+        except Exception:
+            pass
+    return result
+
+
+BLOCKLIST_TTL = 6 * 3600
+_bl_cache = {}
+
+
+def _cached_set(key: str, url: str, parse) -> set:
+    now = time.time()
+    entry = _bl_cache.get(key)
+    if entry and now - entry[1] <= BLOCKLIST_TTL:
+        return entry[0]
+    resp = requests.get(url, timeout=20, headers={"User-Agent": "ti-platform"})
+    resp.raise_for_status()
+    s = set()
+    for line in resp.text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        v = parse(line)
+        if v:
+            s.add(v)
+    _bl_cache[key] = (s, now)
+    print(f"[worker] blocklist {key}: {len(s)} wpisów", flush=True)
+    return s
+
+
+def _cert_domains() -> set:
+    return _cached_set("cert", "https://hole.cert.pl/domains/v2/domains.txt", lambda l: l.lower())
+
+
+def _urlhaus_domains() -> set:
+    def p(l):
+        parts = l.split()
+        d = parts[-1].lower() if parts else ""
+        return d if d and d != "localhost" else None
+    return _cached_set("urlhaus", "https://urlhaus.abuse.ch/downloads/hostfile/", p)
+
+
+def _feodo_ips() -> set:
+    return _cached_set("feodo", "https://feodotracker.abuse.ch/downloads/ipblocklist.txt", lambda l: l)
+
+
+def enrich_blocklist(ioc_type: str, value: str) -> dict:
+    hits = []
+    try:
+        if ioc_type == "domain":
+            v = value.lower()
+            if v in _cert_domains():
+                hits.append("CERT Polska (Lista ostrzeżeń)")
+            if v in _urlhaus_domains():
+                hits.append("abuse.ch URLhaus")
+        elif ioc_type == "ip":
+            if value in _feodo_ips():
+                hits.append("abuse.ch Feodo Tracker (C2)")
+        else:
+            return {"error": "blocklist: dotyczy ip/domain"}
+    except Exception as e:
+        return {"error": str(e)}
+    return {"on_blocklist": len(hits) > 0, "sources": hits}
+
+
+VT_API_KEY = os.environ.get("VT_API_KEY", "")
+VT_MIN_INTERVAL = 16
+_vt_last = 0.0
+
+
+def enrich_virustotal(ioc_type: str, value: str) -> dict:
+    global _vt_last
+    if not VT_API_KEY:
+        return {"error": "brak VT_API_KEY (ustaw w .env)"}
+    if ioc_type == "domain":
+        url = f"https://www.virustotal.com/api/v3/domains/{value}"
+    elif ioc_type == "ip":
+        url = f"https://www.virustotal.com/api/v3/ip_addresses/{value}"
+    elif ioc_type == "hash":
+        url = f"https://www.virustotal.com/api/v3/files/{value}"
+    else:
+        return {"error": "virustotal: dotyczy ip/domain/hash"}
+
+    wait = VT_MIN_INTERVAL - (time.time() - _vt_last)
+    if wait > 0:
+        time.sleep(wait)
+    _vt_last = time.time()
+
+    try:
+        r = requests.get(url, headers={"x-apikey": VT_API_KEY}, timeout=20)
+    except Exception as e:
+        return {"error": str(e)}
+    if r.status_code == 404:
+        return {"error": "brak danych w VT"}
+    if r.status_code == 429:
+        return {"error": "limit VT (429)"}
+    if r.status_code != 200:
+        return {"error": f"VT HTTP {r.status_code}"}
+
+    attrs = r.json().get("data", {}).get("attributes", {})
+    stats = attrs.get("last_analysis_stats", {}) or {}
+    result = {
+        "malicious": stats.get("malicious", 0),
+        "suspicious": stats.get("suspicious", 0),
+        "total_engines": sum(stats.values()) if stats else 0,
+        "reputation": attrs.get("reputation"),
+    }
+    if ioc_type == "hash":
+        result["type_description"] = attrs.get("type_description")
+        names = attrs.get("names") or []
+        if names:
+            result["names"] = names[:5]
+
+    results = attrs.get("last_analysis_results", {}) or {}
+    detections = [
+        {"engine": eng, "result": res.get("result")}
+        for eng, res in results.items()
+        if res.get("category") in ("malicious", "suspicious")
+    ]
+    if detections:
+        result["detections"] = detections[:40]
+    return result
+
+
 ENRICHERS = [
     ("dns", {"ip", "domain"}, enrich_dns),
     ("whois", {"ip", "domain"}, enrich_whois),
@@ -356,6 +566,11 @@ ENRICHERS = [
     ("cdn", {"domain"}, enrich_cdn),
     ("crt", {"domain"}, enrich_crtsh),
     ("tech", {"domain", "url"}, enrich_tech),
+    ("dns_records", {"domain"}, enrich_dnsrecords),
+    ("wayback", {"domain"}, enrich_wayback),
+    ("geoip", {"ip"}, enrich_geoip),
+    ("blocklist", {"ip", "domain"}, enrich_blocklist),
+    ("virustotal", {"ip", "domain", "hash"}, enrich_virustotal),
 ]
 
 

@@ -62,6 +62,7 @@
     border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; font-size: 13px;
   }
   button:hover { filter: brightness(1.08); }
+  button.danger { background: var(--danger); color: #180608; }
   .chips { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
   .chip { background: var(--chip); color: var(--muted); border: 1px solid var(--border);
     border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer; }
@@ -111,12 +112,18 @@
   .enr-cdn { border-left-color: var(--warn); }
   .enr-crt { border-left-color: var(--ok); }
   .enr-tech { border-left-color: var(--cyan); }
+  .enr-dns_records { border-left-color: #d29922; }
+  .enr-blocklist { border-left-color: var(--danger); }
+  .enr-virustotal { border-left-color: #b083f0; }
   .enr-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .src { font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
     padding: 3px 9px; border-radius: 20px; background: var(--chip); color: var(--muted); }
   .src-dns { color: var(--accent); } .src-whois { color: var(--purple); }
   .src-tor { color: var(--danger); } .src-cdn { color: var(--warn); }
   .src-crt { color: var(--ok); } .src-tech { color: var(--cyan); }
+  .src-dns_records { color: #d29922; }
+  .src-blocklist { color: var(--danger); }
+  .src-virustotal { color: #b083f0; }
 
   .badge { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
   .badge.tor { background: rgba(248,81,73,.15); color: var(--danger); border: 1px solid var(--danger); }
@@ -137,6 +144,18 @@
   summary { cursor: pointer; }
   .msg { font-size: 12px; margin-left: 6px; align-self: center; }
   .msg.ok { color: var(--ok); } .msg.bad { color: var(--danger); }
+
+  .nav { display: flex; gap: 6px; margin-bottom: 18px; }
+  .tab { background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .tab.active { color: var(--text); border-color: var(--accent); background: rgba(76,159,254,.12); }
+  .sev { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; flex: none; }
+  .sev-critical { background: rgba(248,81,73,.22); color: #ff6a60; border: 1px solid var(--danger); }
+  .sev-high { background: rgba(248,81,73,.12); color: var(--danger); border: 1px solid var(--danger); }
+  .sev-medium { background: rgba(240,136,62,.15); color: var(--warn); border: 1px solid var(--warn); }
+  .sev-low { background: var(--chip); color: var(--muted); border: 1px solid var(--border); }
+  .finding { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -155,6 +174,13 @@
     <span class="live"><span class="dot"></span> live</span>
   </div>
 
+  <div class="nav">
+    <button class="tab active" data-view="intel">Intel</button>
+    <button class="tab" data-view="recon">Recon</button>
+    <button class="tab" data-view="overview">Przegląd</button>
+  </div>
+
+  <div id="view-intel" class="view">
   <div id="stats" class="stats"></div>
 
   <div class="layout">
@@ -193,6 +219,40 @@
     <div class="panel">
       <h2>Szczegóły</h2>
       <div id="detail"><div class="empty">Kliknij wskaźnik po lewej, żeby zobaczyć wzbogacenia i powiązania.</div></div>
+    </div>
+  </div>
+  </div>
+
+  <div id="view-recon" class="view" style="display:none">
+    <div class="layout">
+      <div class="panel">
+        <h2>Cele (recon)</h2>
+        <form id="targetForm">
+          <input id="tDomain" placeholder="domena celu, np. example.com" required>
+          <button type="submit">Dodaj cel</button>
+          <span id="tMsg" class="msg"></span>
+        </form>
+        <div class="kv" style="margin-bottom:12px">Skanuj tylko domeny, do których masz prawo. Skan pasywny/lekki.</div>
+        <div id="targetsWrap"></div>
+      </div>
+      <div class="panel">
+        <h2>Powierzchnia ataku</h2>
+        <div id="targetDetail"><div class="empty">Kliknij cel, żeby zobaczyć assety i findings.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-overview" class="view" style="display:none">
+    <div id="ovStats" class="stats" style="grid-template-columns:repeat(5,1fr)"></div>
+    <div class="layout">
+      <div class="panel">
+        <h2>Priorytety — findings (CRITICAL / HIGH)</h2>
+        <div id="ovFindings"><div class="empty">Otwórz zakładkę, żeby wczytać przegląd.</div></div>
+      </div>
+      <div class="panel">
+        <h2>Węzły Tor wśród IOC</h2>
+        <div id="ovTor"></div>
+      </div>
     </div>
   </div>
 
@@ -269,6 +329,28 @@ function renderEnrichment(e) {
     inner = d.is_tor_exit
       ? `<span class="badge tor">WĘZEŁ TOR</span> <span class="kv">atrybucja geo bez sensu</span>`
       : `<span class="badge clean">nie-Tor</span>`;
+  } else if (e.source === "blocklist") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else if (d.on_blocklist) inner = `<span class="badge tor">BLACKLISTA</span> <span class="kv">${(d.sources || []).map(esc).join(", ")}</span>`;
+    else inner = `<span class="badge clean">brak na blacklistach</span>`;
+  } else if (e.source === "virustotal") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else {
+      const mal = d.malicious || 0;
+      const badge = mal > 0
+        ? `<span class="badge tor">${mal}/${d.total_engines || 0} złośliwe</span>`
+        : `<span class="badge clean">czysty (0/${d.total_engines || 0})</span>`;
+      const extra = [];
+      if (d.suspicious) extra.push(`podejrzane: ${d.suspicious}`);
+      if (d.reputation != null) extra.push(`reputacja: ${d.reputation}`);
+      if (d.type_description) extra.push(`typ: ${esc(d.type_description)}`);
+      if (d.names) extra.push(`nazwy: ${d.names.map(esc).join(", ")}`);
+      const det = d.detections || [];
+      const detHtml = det.length
+        ? `<details><summary class="kv" style="margin-top:6px">wykrycia (${det.length}) — które silniki i jak nazywają</summary><pre>${esc(det.map(x => `${x.engine}: ${x.result || "?"}`).join("\n"))}</pre></details>`
+        : "";
+      inner = badge + (extra.length ? `<div class="kv" style="margin-top:6px">${extra.join(" · ")}</div>` : "") + detHtml;
+    }
   } else if (e.source === "dns") {
     if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
     else if (d.resolved_ips) inner = `<div class="kv"><b>IP:</b> ${d.resolved_ips.map(esc).join(", ")}</div>`;
@@ -316,7 +398,7 @@ function renderEnrichment(e) {
   } else if (e.source === "tech") {
     if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
     else {
-      const labels = { cms:"CMS", js_lib:"biblioteki JS", analytics:"analityka", external:"usługi zewn." };
+      const labels = { cms:"CMS", commerce:"e-commerce", enterprise:"enterprise", hosting:"hosting/chmura", js_lib:"biblioteki JS", analytics:"analityka", external:"usługi zewn." };
       const parts = [];
       if (d.frontend) parts.push(`<b>frontend:</b> ${d.frontend.map(esc).join(", ")}`);
       if (d.backend) parts.push(`<b>backend:</b> ${d.backend.map(esc).join(", ")}`);
@@ -333,6 +415,33 @@ function renderEnrichment(e) {
       }
       inner = `<div class="kv">${parts.length ? parts.join("<br>") : "brak wyraźnych sygnatur"}</div>
         <div class="kv" style="margin-top:4px;opacity:.7">${esc(d.note||"")}</div>`;
+    }
+  } else if (e.source === "dns_records") {
+    const parts = [];
+    if (d.MX) parts.push(`<b>MX:</b> ${d.MX.map(esc).join(", ")}`);
+    if (d.NS) parts.push(`<b>NS:</b> ${d.NS.map(esc).join(", ")}`);
+    if (d.SPF) parts.push(`<b>SPF:</b> ${d.SPF.map(esc).join(" ")}`);
+    if (d.DMARC) parts.push(`<b>DMARC:</b> ${d.DMARC.map(esc).join(" ")}`);
+    inner = `<div class="kv">${parts.length ? parts.join("<br>") : (d.note ? esc(d.note) : "brak rekordów")}</div>`;
+  } else if (e.source === "wayback") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else {
+      const sample = d.sample || [];
+      inner = `<div class="kv"><b>${d.count || 0}</b> historycznych URL-i (archive.org)</div>` +
+        (sample.length ? `<details><summary class="kv">pokaż próbkę</summary><pre>${esc(sample.join("\n"))}</pre></details>` : "");
+    }
+  } else if (e.source === "geoip") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else {
+      const parts = [];
+      if (d.country) parts.push(`<b>lokalizacja:</b> ${esc(d.country)}${d.city ? ", " + esc(d.city) : ""}`);
+      if (d.isp) parts.push(`<b>ISP:</b> ${esc(d.isp)}`);
+      if (d.org) parts.push(`<b>org:</b> ${esc(d.org)}`);
+      if (d.as) parts.push(`<b>ASN:</b> ${esc(d.as)}`);
+      if (d.asn_prefixes_count != null) parts.push(`<b>prefiksy ASN:</b> ${d.asn_prefixes_count}`);
+      inner = `<div class="kv">${parts.join("<br>") || "brak danych"}</div>` +
+        ((d.asn_prefixes_sample && d.asn_prefixes_sample.length)
+          ? `<details><summary class="kv">prefiksy ASN</summary><pre>${esc(d.asn_prefixes_sample.join("\n"))}</pre></details>` : "");
     }
   } else {
     inner = `<pre>${esc(JSON.stringify(d, null, 2))}</pre>`;
@@ -371,6 +480,13 @@ function buildGraph(focal, related) {
     ${edges}${nodes}</svg>`;
 }
 
+const EXPECTED_SOURCES = {
+  ip: ["dns", "whois", "tor", "geoip", "blocklist", "virustotal"],
+  domain: ["dns", "whois", "cdn", "crt", "tech", "dns_records", "wayback", "blocklist", "virustotal"],
+  hash: ["virustotal"],
+  url: ["tech"],
+};
+
 async function showDetail(id, force = false) {
   if (String(id) !== String(selectedId)) { selectedId = id; force = true; }
   const { ok, body } = await api(`/iocs/${id}`);
@@ -405,6 +521,13 @@ async function showDetail(id, force = false) {
     }
   }
 
+  const expected = EXPECTED_SOURCES[body.type] || [];
+  const presentSrc = new Set(enr.map(e => e.source));
+  const doneCount = expected.filter(s => presentSrc.has(s)).length;
+  const progressBadge = doneCount < expected.length
+    ? `<span class="badge" style="background:rgba(76,159,254,.15);color:var(--accent);border:1px solid var(--accent)">przetwarzanie… ${doneCount}/${expected.length}</span>`
+    : `<span class="badge clean">wzbogacono</span>`;
+
   const risk = body.risk || { level: "unknown", score: 0, reasons: [] };
   const riskLabel = { high: "WYSOKIE", medium: "ŚREDNIE", low: "NISKIE", unknown: "NIEZNANE" };
   const riskHtml = `<div class="risk ${esc(risk.level)}">
@@ -418,6 +541,8 @@ async function showDetail(id, force = false) {
     <div class="dhead">
       <span class="big">${esc(body.value)}</span>
       <span class="type type-${esc(body.type)}">${esc(body.type)}</span>
+      ${progressBadge}
+      <button id="delIoc" type="button" class="danger" style="margin-left:auto">Usuń</button>
     </div>
     <div class="dmeta">źródło: ${esc(body.source) || "—"} · dodano ${fmt(body.created_at)}</div>
     ${riskHtml}
@@ -431,6 +556,15 @@ async function showDetail(id, force = false) {
       if (nid && String(nid) !== String(id)) showDetail(nid, true);
     })
   );
+
+  const delIoc = det.querySelector("#delIoc");
+  if (delIoc) delIoc.addEventListener("click", async () => {
+    if (!confirm(`Usunąć IOC „${body.value}"?`)) return;
+    await fetch(`/iocs/${id}`, { method: "DELETE" });
+    selectedId = null; lastDetailSig = "";
+    det.innerHTML = `<div class="empty">Usunięto. Wybierz inny wskaźnik.</div>`;
+    loadList(true);
+  });
 }
 
 $("#addForm").addEventListener("submit", async (ev) => {
@@ -491,6 +625,116 @@ document.querySelectorAll("#filters button").forEach(b =>
   })
 );
 
+let selectedTarget = null;
+
+function statusBadge(s) {
+  if (s === "scanning") return `<span class="badge" style="background:rgba(76,159,254,.15);color:var(--accent);border:1px solid var(--accent)">skanuje…</span>`;
+  if (s === "done") return `<span class="badge clean">gotowe</span>`;
+  return `<span class="badge lowconf">w kolejce</span>`;
+}
+
+async function loadTargets(force = false) {
+  const { ok, body } = await api("/targets");
+  const wrap = $("#targetsWrap");
+  if (!ok || !Array.isArray(body)) return;
+  if (body.length === 0) { wrap.innerHTML = `<div class="empty">Brak celów. Dodaj domenę powyżej.</div>`; return; }
+  wrap.innerHTML = `<table><thead><tr><th>domena</th><th>status</th><th>assety</th><th>findings</th></tr></thead><tbody>` +
+    body.map(t => `<tr class="row ${String(t.id) === String(selectedTarget) ? "sel" : ""}" data-id="${t.id}">
+      <td class="val">${esc(t.domain)}</td><td>${statusBadge(t.status)}</td><td>${t.asset_count}</td><td>${t.finding_count}</td></tr>`).join("") +
+    `</tbody></table>`;
+  wrap.querySelectorAll("tr.row").forEach(tr =>
+    tr.addEventListener("click", () => showTarget(tr.dataset.id)));
+}
+
+async function showTarget(id) {
+  selectedTarget = id;
+  const { ok, body } = await api(`/targets/${id}`);
+  const det = $("#targetDetail");
+  if (!ok) { det.innerHTML = `<div class="err">Nie udało się pobrać.</div>`; return; }
+  const assets = body.assets || [];
+  const findings = body.findings || [];
+  const scanned = body.last_scanned_at ? fmt(body.last_scanned_at) : "jeszcze nie skanowano (worker w tle)";
+  det.innerHTML = `
+    <div class="dhead"><span class="big">${esc(body.domain)}</span> ${statusBadge(body.status)}
+      <button id="delTarget" type="button" class="danger" style="margin-left:auto">Usuń cel</button></div>
+    <div class="dmeta">assety: ${assets.length} · findings: ${findings.length} · ostatni skan: ${scanned}</div>
+    <h3>Findings</h3>
+    ${findings.length ? findings.map(f => `
+      <div class="finding">
+        <span class="sev sev-${esc(f.severity)}">${esc(f.severity)}</span>
+        <div><div><b>${esc(f.title)}</b></div>
+          <div class="kv">${esc(f.asset)}${f.detail ? " — " + esc(f.detail) : ""}</div></div>
+      </div>`).join("") : `<div class="empty">Brak findings (albo skan jeszcze trwa).</div>`}
+    <h3>Assety (${assets.length})</h3>
+    ${assets.length ? assets.map(a => `<div class="rel" style="cursor:default">
+      <span class="val">${esc(a.value)}</span> ${a.resolved_ip ? `<span class="kv">→ ${esc(a.resolved_ip)}</span>` : `<span class="kv">(nie rozwiązano)</span>`}
+      </div>`).join("") : `<div class="empty">Brak assetów jeszcze.</div>`}`;
+
+  const delT = det.querySelector("#delTarget");
+  if (delT) delT.addEventListener("click", async () => {
+    if (!confirm(`Usunąć cel „${body.domain}" wraz z assetami i findings?`)) return;
+    await fetch(`/targets/${id}`, { method: "DELETE" });
+    selectedTarget = null;
+    det.innerHTML = `<div class="empty">Usunięto cel.</div>`;
+    loadTargets(true);
+  });
+}
+
+$("#targetForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const domain = $("#tDomain").value.trim();
+  const msg = $("#tMsg");
+  const { ok, status, body } = await api("/targets", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain }),
+  });
+  if (ok) { msg.className = "msg ok"; msg.textContent = "dodano — skan w tle ✓"; $("#tDomain").value = ""; loadTargets(true); }
+  else { msg.className = "msg bad"; msg.textContent = (body && body.error) ? body.error : `błąd ${status}`; }
+  setTimeout(() => { msg.textContent = ""; }, 4000);
+});
+
+async function loadOverview() {
+  const { ok, body } = await api("/overview");
+  if (!ok || !body) return;
+  const c = body.counts || {};
+  const f = c.findings || {};
+  $("#ovStats").innerHTML = `
+    <div class="stat"><div class="n">${c.iocs || 0}</div><div class="l">IOC</div></div>
+    <div class="stat"><div class="n" style="color:var(--danger)">${(f.critical || 0) + (f.high || 0)}</div><div class="l">Findings HIGH+</div></div>
+    <div class="stat"><div class="n" style="color:var(--warn)">${c.targets || 0}</div><div class="l">Cele recon</div></div>
+    <div class="stat"><div class="n">${c.assets || 0}</div><div class="l">Assety</div></div>
+    <div class="stat"><div class="n">${(body.tor_iocs || []).length}</div><div class="l">Węzły Tor</div></div>`;
+
+  const tf = body.top_findings || [];
+  $("#ovFindings").innerHTML = tf.length ? tf.map(x => `
+    <div class="finding">
+      <span class="sev sev-${esc(x.severity)}">${esc(x.severity)}</span>
+      <div><div><b>${esc(x.title)}</b></div>
+        <div class="kv">${esc(x.target)} · ${esc(x.asset)}${x.detail ? " — " + esc(x.detail) : ""}</div></div>
+    </div>`).join("") : `<div class="empty">Brak findings HIGH/CRITICAL. Dodaj cel w module Recon.</div>`;
+
+  const tor = body.tor_iocs || [];
+  $("#ovTor").innerHTML = tor.length ? tor.map(x => `
+    <div class="rel" data-id="${x.id}"><span class="badge tor">TOR</span> <span class="val">${esc(x.value)}</span></div>`).join("")
+    : `<div class="empty">Brak IOC oznaczonych jako Tor.</div>`;
+  $("#ovTor").querySelectorAll(".rel").forEach(el =>
+    el.addEventListener("click", () => {
+      document.querySelector('.tab[data-view="intel"]').click();
+      showDetail(el.dataset.id, true);
+    }));
+}
+
+document.querySelectorAll(".tab").forEach(t =>
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    const v = t.dataset.view;
+    document.querySelectorAll(".view").forEach(el => el.style.display = "none");
+    $("#view-" + v).style.display = "";
+    if (v === "recon") loadTargets(true);
+    if (v === "overview") loadOverview();
+  })
+);
+
 loadList(true);
 
 function startSSE() {
@@ -503,8 +747,13 @@ function startSSE() {
 startSSE();
 
 setInterval(() => {
-  loadList();
-  if (selectedId) showDetail(selectedId);
+  if ($("#view-recon").style.display !== "none") {
+    loadTargets(true);
+    if (selectedTarget) showTarget(selectedTarget);
+  } else {
+    loadList();
+    if (selectedId) showDetail(selectedId);
+  }
 }, 15000);
 </script>
 </body>
