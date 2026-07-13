@@ -1,6 +1,8 @@
 import os
 import time
 import socket
+import random
+import string
 
 import psycopg
 import requests
@@ -46,21 +48,28 @@ def resolve(host: str):
         return None
 
 
-def bruteforce_subdomains(domain: str) -> list:
-    found = []
-    for w in SUBDOMAIN_WORDLIST:
-        host = f"{w}.{domain}"
-        if resolve(host):
-            found.append(host)
-    return found
+def wildcard_ip(domain: str):
+    rnd = "".join(random.choices(string.ascii_lowercase + string.digits, k=14))
+    return resolve(f"{rnd}.{domain}")
 
 
 def scan_target(conn, target_id: int, domain: str):
-    subs = sorted(set(crtsh_subdomains(domain)) | set(bruteforce_subdomains(domain)) | {domain})
+    wc = wildcard_ip(domain)
+    discovered = {domain: resolve(domain)}
+    for sub in crtsh_subdomains(domain):
+        if sub not in discovered:
+            discovered[sub] = resolve(sub)
+    for w in SUBDOMAIN_WORDLIST:
+        host = f"{w}.{domain}"
+        if host in discovered:
+            continue
+        ip = resolve(host)
+        if ip and (wc is None or ip != wc):
+            discovered[host] = ip
+
     resolvable = []
     with conn.cursor() as cur:
-        for sub in subs:
-            ip = resolve(sub)
+        for name, ip in sorted(discovered.items()):
             cur.execute(
                 """
                 INSERT INTO assets (target_id, type, value, resolved_ip)
@@ -68,15 +77,25 @@ def scan_target(conn, target_id: int, domain: str):
                 ON CONFLICT (target_id, value)
                 DO UPDATE SET last_seen = now(), resolved_ip = EXCLUDED.resolved_ip
                 """,
-                (target_id, sub, ip),
+                (target_id, name, ip),
             )
             if ip:
-                resolvable.append(sub)
+                resolvable.append(name)
+        if wc:
+            cur.execute(
+                """
+                INSERT INTO findings (target_id, asset, severity, title, detail)
+                VALUES (%s, %s, 'low', 'Wildcard DNS', %s)
+                ON CONFLICT (target_id, asset, title) DO NOTHING
+                """,
+                (target_id, domain, f"*.{domain} -> {wc}; enumeracja brute-force ograniczona"),
+            )
         cur.execute("UPDATE targets SET last_scanned_at = now() WHERE id = %s", (target_id,))
     conn.commit()
-    print(f"[recon] target {target_id} ({domain}): {len(subs)} assetów, {len(resolvable)} żywych", flush=True)
+    print(f"[recon] target {target_id} ({domain}): {len(discovered)} assetów, {len(resolvable)} żywych, wildcard={wc}", flush=True)
 
-    for host in resolvable[:MAX_CHECK_HOSTS]:
+    check_hosts = [domain] + sorted(h for h in resolvable if h != domain)
+    for host in check_hosts[:MAX_CHECK_HOSTS]:
         for f in run_checks(host):
             with conn.cursor() as cur:
                 cur.execute(

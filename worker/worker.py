@@ -218,7 +218,7 @@ TECH_SIGNATURES = {
     },
     "commerce": {
         "Shopify": ["cdn.shopify.com", "myshopify.com"],
-        "Magento / Adobe Commerce": ["/static/version", "mage/", "magento"],
+        "Magento / Adobe Commerce": ["magento", "mage-cache-storage", "/static/frontend/"],
         "WooCommerce": ["woocommerce"],
         "PrestaShop": ["prestashop"],
         "BigCommerce": ["bigcommerce"],
@@ -228,7 +228,7 @@ TECH_SIGNATURES = {
         "Salesforce": ["force.com", "salesforce"],
         "ServiceNow": ["servicenow"],
         "SAP": ["sap.com", "/sap/"],
-        "Oracle": ["oracle"],
+        "Oracle": ["oracle-adf", "/webcenter/"],
     },
     "hosting": {
         "AWS": ["s3.amazonaws.com", "cloudfront.net", "elasticbeanstalk", "awsstatic"],
@@ -240,8 +240,8 @@ TECH_SIGNATURES = {
         "Fastly": ["fastly"],
     },
     "framework": {
-        "React": ["data-reactroot", "__react", "react.production"],
-        "Vue.js": ["__vue__", "data-v-", "vue.js"],
+        "React": ["data-reactroot", "__react", "react-dom", "reactcurrentdispatcher", "react.production"],
+        "Vue.js": ["__vue__", "data-v-", "vue.js", "__vue_app__"],
         "Svelte": ["svelte-"],
         "Angular": ["ng-version", "angular.js"],
         "Next.js": ["/_next/", "__next_data__"],
@@ -334,8 +334,24 @@ def enrich_tech(ioc_type: str, value: str) -> dict:
         return {"error": str(e)}
 
     h = {k.lower(): v for k, v in resp.headers.items()}
-    body = resp.text[:400000].lower()
-    result = {"status_code": resp.status_code, "final_url": str(resp.url)}
+    base = str(resp.url)
+    html = resp.text[:400000]
+    js_text = ""
+    for src in re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', resp.text, re.I)[:3]:
+        if src.startswith("//"):
+            js_url = "https:" + src
+        elif src.startswith("http"):
+            js_url = src
+        else:
+            js_url = base.rstrip("/") + "/" + src.lstrip("/")
+        try:
+            jr = requests.get(js_url, timeout=10, headers={"User-Agent": "ti-platform"})
+            if jr.status_code == 200:
+                js_text += jr.text[:300000]
+        except Exception:
+            pass
+    body = (html + " " + js_text).lower()
+    result = {"status_code": resp.status_code, "final_url": base}
 
     server_info = {}
     for hk in ("server", "x-powered-by", "x-generator", "x-aspnet-version", "via"):
@@ -343,6 +359,25 @@ def enrich_tech(ioc_type: str, value: str) -> dict:
             server_info[hk] = h[hk]
     if server_info:
         result["server"] = server_info
+
+    server_raw = h.get("server", "").lower()
+    for needle, name in (("nginx", "nginx"), ("openresty", "OpenResty"), ("apache", "Apache"),
+                         ("microsoft-iis", "IIS"), ("litespeed", "LiteSpeed"), ("caddy", "Caddy"),
+                         ("envoy", "Envoy"), ("cloudflare", "Cloudflare")):
+        if needle in server_raw:
+            result["web_server"] = name
+            break
+    proxies = []
+    if "via" in h:
+        proxies.append("Via: " + h["via"][:80])
+    if "x-varnish" in h:
+        proxies.append("Varnish")
+    if "cf-ray" in h:
+        proxies.append("Cloudflare")
+    if "x-cache" in h or "x-served-by" in h:
+        proxies.append("cache/CDN")
+    if proxies:
+        result["proxy"] = proxies
 
     set_cookie = h.get("set-cookie", "").lower()
     server_blob = " ".join(server_info.values()).lower()
@@ -559,6 +594,65 @@ def enrich_virustotal(ioc_type: str, value: str) -> dict:
     return result
 
 
+def enrich_shodan(ioc_type: str, value: str) -> dict:
+    if ioc_type != "ip":
+        return {"error": "shodan: dotyczy tylko IP"}
+    try:
+        r = requests.get(f"https://internetdb.shodan.io/{value}", timeout=12,
+                         headers={"User-Agent": "ti-platform"})
+    except Exception as e:
+        return {"error": str(e)}
+    if r.status_code == 404:
+        return {"ports": [], "vulns": [], "note": "brak danych w Shodan InternetDB"}
+    if r.status_code != 200:
+        return {"error": f"shodan HTTP {r.status_code}"}
+    d = r.json()
+    return {
+        "ports": d.get("ports", []),
+        "hostnames": d.get("hostnames", []),
+        "tags": d.get("tags", []),
+        "vulns": d.get("vulns", []),
+        "cpes": (d.get("cpes") or [])[:10],
+    }
+
+
+_tf_cache = {"map": {}, "fetched_at": 0.0}
+
+
+def _threatfox_map() -> dict:
+    now = time.time()
+    if _tf_cache["map"] and now - _tf_cache["fetched_at"] <= BLOCKLIST_TTL:
+        return _tf_cache["map"]
+    resp = requests.get("https://threatfox.abuse.ch/export/json/recent/", timeout=25,
+                        headers={"User-Agent": "ti-platform"})
+    resp.raise_for_status()
+    data = resp.json()
+    m = {}
+    for entries in data.values():
+        for e in entries:
+            v = str(e.get("ioc_value", "")).strip().lower()
+            fam = e.get("malware_printable") or e.get("malware") or "?"
+            if v:
+                m[v] = fam
+                if ":" in v:
+                    m[v.split(":")[0]] = fam
+    _tf_cache["map"] = m
+    _tf_cache["fetched_at"] = now
+    print(f"[worker] ThreatFox: {len(m)} IOC", flush=True)
+    return m
+
+
+def enrich_threatfox(ioc_type: str, value: str) -> dict:
+    if ioc_type not in ("ip", "domain", "hash"):
+        return {"error": "threatfox: dotyczy ip/domain/hash"}
+    try:
+        m = _threatfox_map()
+    except Exception as e:
+        return {"error": str(e)}
+    fam = m.get(value.lower())
+    return {"on_threatfox": fam is not None, "malware": fam}
+
+
 ENRICHERS = [
     ("dns", {"ip", "domain"}, enrich_dns),
     ("whois", {"ip", "domain"}, enrich_whois),
@@ -570,6 +664,8 @@ ENRICHERS = [
     ("wayback", {"domain"}, enrich_wayback),
     ("geoip", {"ip"}, enrich_geoip),
     ("blocklist", {"ip", "domain"}, enrich_blocklist),
+    ("shodan", {"ip"}, enrich_shodan),
+    ("threatfox", {"ip", "domain", "hash"}, enrich_threatfox),
     ("virustotal", {"ip", "domain", "hash"}, enrich_virustotal),
 ]
 

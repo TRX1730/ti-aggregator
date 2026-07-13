@@ -54,6 +54,10 @@ func main() {
 	mux.HandleFunc("GET /targets", srv.listTargets)
 	mux.HandleFunc("GET /targets/{id}", srv.getTarget)
 	mux.HandleFunc("DELETE /targets/{id}", srv.deleteTarget)
+	mux.HandleFunc("POST /watchlist", srv.addWatch)
+	mux.HandleFunc("GET /watchlist", srv.listWatch)
+	mux.HandleFunc("DELETE /watchlist/{id}", srv.deleteWatch)
+	mux.HandleFunc("GET /alerts", srv.listAlerts)
 	mux.HandleFunc("GET /overview", srv.getOverview)
 	mux.HandleFunc("GET /events", srv.eventsHandler)
 

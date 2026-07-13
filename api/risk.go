@@ -55,6 +55,27 @@ func computeRisk(ioc IOC, ens []Enrichment) riskResult {
 				score += add
 				reasons = append(reasons, fmt.Sprintf("VirusTotal: %d silników flaguje jako złośliwe (+%d)", d.Malicious, add))
 			}
+		case "shodan":
+			var d struct {
+				Vulns []string `json:"vulns"`
+			}
+			if json.Unmarshal(e.Data, &d) == nil && len(d.Vulns) > 0 {
+				add := len(d.Vulns) * 10
+				if add > 30 {
+					add = 30
+				}
+				score += add
+				reasons = append(reasons, fmt.Sprintf("Shodan: %d znanych CVE (+%d)", len(d.Vulns), add))
+			}
+		case "threatfox":
+			var d struct {
+				OnThreatfox bool   `json:"on_threatfox"`
+				Malware     string `json:"malware"`
+			}
+			if json.Unmarshal(e.Data, &d) == nil && d.OnThreatfox {
+				score += 50
+				reasons = append(reasons, "na feedzie ThreatFox (malware IOC) (+50)")
+			}
 		}
 	}
 

@@ -27,8 +27,10 @@ type pivotNode struct {
 }
 
 type pivotResult struct {
-	PivotIPs []pivotIP   `json:"pivot_ips"`
-	Related  []pivotNode `json:"related"`
+	PivotIPs     []pivotIP   `json:"pivot_ips"`
+	Related      []pivotNode `json:"related"`
+	SharedASN    string      `json:"shared_asn,omitempty"`
+	RelatedByASN []pivotNode `json:"related_by_asn"`
 }
 
 func (s *server) getPivots(w http.ResponseWriter, r *http.Request) {
@@ -54,8 +56,9 @@ func (s *server) getPivots(w http.ResponseWriter, r *http.Request) {
 
 	focalIPs := s.ipsForIOC(ctx, id, iocType, iocValue)
 
-	result := pivotResult{PivotIPs: []pivotIP{}, Related: []pivotNode{}}
+	result := pivotResult{PivotIPs: []pivotIP{}, Related: []pivotNode{}, RelatedByASN: []pivotNode{}}
 	if len(focalIPs) == 0 {
+		s.addASNPivots(ctx, id, &result)
 		writeJSON(w, http.StatusOK, result)
 		return
 	}
@@ -122,7 +125,42 @@ func (s *server) getPivots(w http.ResponseWriter, r *http.Request) {
 		result.Related = append(result.Related, related[i])
 	}
 
+	s.addASNPivots(ctx, id, &result)
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *server) addASNPivots(ctx context.Context, id int64, result *pivotResult) {
+	var focalASN string
+	s.db.QueryRow(ctx,
+		`SELECT data->>'as' FROM enrichments
+		 WHERE ioc_id=$1 AND source='geoip' AND data->>'as' IS NOT NULL LIMIT 1`, id).
+		Scan(&focalASN)
+	if focalASN == "" {
+		return
+	}
+	result.SharedASN = focalASN
+
+	seen := map[int64]bool{id: true}
+	for _, n := range result.Related {
+		seen[n.ID] = true
+	}
+
+	rows, err := s.db.Query(ctx, `
+		SELECT DISTINCT i.id, i.type, i.value, i.source, i.created_at
+		FROM iocs i JOIN enrichments e ON e.ioc_id = i.id
+		WHERE i.id <> $1 AND e.source='geoip' AND e.data->>'as' = $2
+		ORDER BY i.id`, id, focalASN)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var n pivotNode
+		if rows.Scan(&n.ID, &n.Type, &n.Value, &n.Source, &n.CreatedAt) == nil && !seen[n.ID] {
+			n.Confidence = "low"
+			result.RelatedByASN = append(result.RelatedByASN, n)
+		}
+	}
 }
 
 func (s *server) ipsForIOC(ctx context.Context, id int64, iocType, iocValue string) map[string]struct{} {

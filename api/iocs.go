@@ -26,6 +26,7 @@ type Enrichment struct {
 	Source    string          `json:"source"`
 	Data      json.RawMessage `json:"data"`
 	CreatedAt time.Time       `json:"created_at"`
+	Mitre     *mitre          `json:"mitre,omitempty"`
 }
 
 type IOCWithEnrichments struct {
@@ -137,6 +138,7 @@ func (s *server) getIOC(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		e.Data = raw
+		e.Mitre = mitreForSource(e.Source)
 		enrichments = append(enrichments, e)
 	}
 	if err := eRows.Err(); err != nil {

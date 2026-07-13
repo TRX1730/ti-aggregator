@@ -38,6 +38,7 @@ type Finding struct {
 	Title     string    `json:"title"`
 	Detail    string    `json:"detail"`
 	CreatedAt time.Time `json:"created_at"`
+	Mitre     *mitre    `json:"mitre,omitempty"`
 }
 
 type targetDetail struct {
@@ -168,6 +169,7 @@ func (s *server) getTarget(w http.ResponseWriter, r *http.Request) {
 				if detail != nil {
 					f.Detail = *detail
 				}
+				f.Mitre = mitreForFinding(f.Title)
 				out.Findings = append(out.Findings, f)
 			}
 		}

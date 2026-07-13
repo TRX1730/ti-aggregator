@@ -115,6 +115,8 @@
   .enr-dns_records { border-left-color: #d29922; }
   .enr-blocklist { border-left-color: var(--danger); }
   .enr-virustotal { border-left-color: #b083f0; }
+  .enr-shodan { border-left-color: #e3b341; }
+  .enr-threatfox { border-left-color: var(--danger); }
   .enr-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .src { font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
     padding: 3px 9px; border-radius: 20px; background: var(--chip); color: var(--muted); }
@@ -124,12 +126,16 @@
   .src-dns_records { color: #d29922; }
   .src-blocklist { color: var(--danger); }
   .src-virustotal { color: #b083f0; }
+  .src-shodan { color: #e3b341; }
+  .src-threatfox { color: var(--danger); }
 
   .badge { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
   .badge.tor { background: rgba(248,81,73,.15); color: var(--danger); border: 1px solid var(--danger); }
   .badge.clean { background: rgba(63,185,80,.12); color: var(--ok); border: 1px solid var(--ok); }
   .badge.cf { background: rgba(240,136,62,.15); color: var(--warn); border: 1px solid var(--warn); }
   .badge.lowconf { background: var(--chip); color: var(--muted); border: 1px solid var(--border); }
+  .mitre { font-size: 10px; padding: 2px 7px; border-radius: 6px; font-family: ui-monospace, monospace;
+    background: rgba(163,113,247,.15); color: #a371f7; border: 1px solid rgba(163,113,247,.4); cursor: help; }
 
   .kv { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
   .kv b { color: var(--text); font-weight: 600; }
@@ -178,6 +184,8 @@
     <button class="tab active" data-view="intel">Intel</button>
     <button class="tab" data-view="recon">Recon</button>
     <button class="tab" data-view="overview">Przegląd</button>
+    <button class="tab" data-view="watch">Śledzenie</button>
+    <button class="tab" data-view="help">Instrukcja</button>
   </div>
 
   <div id="view-intel" class="view">
@@ -253,6 +261,78 @@
         <h2>Węzły Tor wśród IOC</h2>
         <div id="ovTor"></div>
       </div>
+    </div>
+  </div>
+
+  <div id="view-watch" class="view" style="display:none">
+    <div class="layout">
+      <div class="panel">
+        <h2>Obserwowane</h2>
+        <div class="kv" style="margin-bottom:10px">Dodajesz przyciskiem „★ Śledź" w szczegółach IOC lub celu recon. Monitor sprawdza zmiany co 5 min (nowe IP, Tor, blacklista, ThreatFox, nowe assety/findings).</div>
+        <div id="watchWrap"></div>
+      </div>
+      <div class="panel">
+        <h2>Alerty</h2>
+        <div id="alertsWrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-help" class="view" style="display:none">
+    <div class="panel" style="max-width:1000px; line-height:1.6">
+      <h2>Instrukcja obsługi</h2>
+      <p class="kv">Platforma threat intelligence z czterema modułami na wspólnym rdzeniu. Wszystkie źródła są <b>bezkluczowe</b> i działają od razu — jedynym opcjonalnym wyjątkiem jest VirusTotal (wymaga własnego klucza API w <code>.env</code>).</p>
+
+      <h3>Moduły (zakładki)</h3>
+      <div class="kv">
+        <b>Intel</b> — rejestr wskaźników (IOC) i ich automatyczne wzbogacanie z 12 źródeł.<br>
+        <b>Recon</b> — powierzchnia ataku domeny: odkrywanie subdomen + pasywne sprawdzenia ekspozycji.<br>
+        <b>Przegląd</b> — świadomość sytuacyjna: liczniki + priorytety + IOC z Tora.<br>
+        <b>Śledzenie</b> — monitoring wybranych IOC/celów z alertami na zmiany.
+      </div>
+
+      <h3 style="margin-top:20px">Intel — jak używać</h3>
+      <p class="kv">Wpisz typ (ip / domena / hash / url) i wartość, kliknij <b>Dodaj</b>. Worker w tle wzbogaca wskaźnik. W nagłówku szczegółów widać <span class="badge" style="background:rgba(76,159,254,.15);color:var(--accent);border:1px solid var(--accent)">przetwarzanie… 5/9</span> → <span class="badge clean">wzbogacono</span>. Kliknij wskaźnik na liście, żeby zobaczyć wszystko: ryzyko, źródła, powiązania. Masz też <b>Import z logów</b> (wkleja log, wyciąga IP/domeny), <b>Eksport STIX 2.1</b> (do MISP), <b>Usuń</b> i <b>★ Śledź</b>.</p>
+
+      <h3 style="margin-top:20px">Jak czytać źródła wzbogaceń</h3>
+      <table>
+        <thead><tr><th>źródło</th><th>co daje / jak czytać</th></tr></thead>
+        <tbody>
+        <tr><td class="val">dns</td><td class="kv">rozwiązanie DNS (domena→IP, IP→host). „No address" = brak wpisu (normalne dla wielu IP).</td></tr>
+        <tr><td class="val">whois</td><td class="kv">dane rejestracyjne (RDAP): kraj, nazwa, handle sieci. Rozwiń „surowy RDAP" po szczegóły.</td></tr>
+        <tr><td class="val">dns_records</td><td class="kv">rekordy MX/NS + SPF/DMARC (postura poczty).</td></tr>
+        <tr><td class="val">tor</td><td class="kv">czerwony <b>WĘZEŁ TOR</b> = IP to węzeł wyjściowy Tora → geolokalizacja nic nie mówi o sprawcy.</td></tr>
+        <tr><td class="val">cdn</td><td class="kv">czy domena jest za CDN/WAF (Cloudflare/Akamai/…) + heurystyczni kandydaci na origin (NIEPEWNE).</td></tr>
+        <tr><td class="val">crt</td><td class="kv">subdomeny z certyfikatów (crt.sh).</td></tr>
+        <tr><td class="val">tech</td><td class="kv">stack: web server (nginx…), frontend, backend, CMS, e-commerce, hosting, API/GraphQL. Orientacyjnie.</td></tr>
+        <tr><td class="val">wayback</td><td class="kv">liczba i próbka historycznych URL-i (archive.org).</td></tr>
+        <tr><td class="val">geoip</td><td class="kv">lokalizacja, ISP, org, ASN + prefiksy sieci tego ASN.</td></tr>
+        <tr><td class="val">blocklist</td><td class="kv">czy IOC jest na feedach CTI: CERT Polska + abuse.ch (URLhaus/Feodo). Trafienie = wysokie ryzyko.</td></tr>
+        <tr><td class="val">shodan</td><td class="kv">otwarte porty, tagi i <b>CVE</b> dla IP (Shodan InternetDB, bez klucza). „brak danych" = host nieskanowany.</td></tr>
+        <tr><td class="val">threatfox</td><td class="kv">czy IOC jest w feedzie malware abuse.ch + rodzina (Emotet…). Działa też dla hashy.</td></tr>
+        <tr><td class="val">virustotal</td><td class="kv">reputacja: <b>X/N złośliwe</b> (silniki AV). Rozwiń „wykrycia" — które silniki i jak nazywają. Wymaga klucza.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">Ryzyko (risk score)</h3>
+      <p class="kv">Wynik 0–100 z jawnych sygnałów (widać powody): węzeł Tor +40, świeżo zarejestrowana domena +30, na blackliście +50, na ThreatFox +50, VirusTotal +10 za silnik (max +50), Shodan +10 za CVE, podejrzana etykieta źródła +20. Poziomy: <span class="badge clean">NISKIE</span> / <span class="badge cf">ŚREDNIE</span> / <span class="badge tor">WYSOKIE</span>.</p>
+
+      <h3 style="margin-top:20px">Powiązania (pivoty)</h3>
+      <p class="kv"><b>Wspólne IP</b> = powiązanie host-level. „wysoka pewność" gdy to dedykowane IP; „CDN · niska pewność" gdy IP należy do CDN (miliony domen — słaby sygnał). <b>Wspólny ASN</b> = powiązanie network-level, jeszcze szersze/słabsze. Klik w powiązanie = przeskok na tamten IOC.</p>
+
+      <h3 style="margin-top:20px">Tagi MITRE ATT&amp;CK</h3>
+      <p class="kv">Fioletowy tag <span class="mitre">ATT&amp;CK T1590.002</span> przy źródle/findingu = technika ATT&amp;CK, którą reprezentuje dana czynność (najedź: nazwa + taktyka). To „język" branży CTI — pokazuje, na jakim etapie łańcucha ataku jesteśmy.</p>
+
+      <h3 style="margin-top:20px">Recon — jak używać i czytać</h3>
+      <p class="kv">Dodaj <b>cel</b> (domenę, do której masz prawo). Worker: odkrywa subdomeny (crt.sh + brute-force z filtrem wildcard) → <b>assety</b>, potem pasywne sprawdzenia → <b>findings</b>. Status celu: <b>w kolejce → skanuje… → gotowe</b>. Severity findings: <span class="sev sev-critical">critical</span> (np. odsłonięty .env) <span class="sev sev-high">high</span> (panel admin, .git, takeover) <span class="sev sev-medium">medium</span> (backup, listing, wewnętrzne IP) <span class="sev sev-low">low</span> (nagłówki, wersje). <b>Wyłącznie pasywne</b> sprawdzenia — żadnych aktywnych ataków. Skanuj tylko to, na co masz zgodę.</p>
+
+      <h3 style="margin-top:20px">Śledzenie — jak używać</h3>
+      <p class="kv">W szczegółach IOC lub celu kliknij <b>★ Śledź</b>. Monitor co 5 min sprawdza zmiany i generuje <b>alerty</b>: zmiana IP domeny, IOC stał się węzłem Tor, pojawił się na blackliście/ThreatFox, nowe assety/findings dla celu. Pierwszy odczyt to zawsze baseline (bez alertu) — alerty pojawiają się przy realnej zmianie w czasie.</p>
+
+      <h3 style="margin-top:20px">Dobrze wiedzieć</h3>
+      <p class="kv">• Zewnętrzne serwisy bywają wolne/niedostępne (crt.sh, archive.org) — błąd na karcie to zwykle chwilowa czkawka, można odświeżyć.<br>
+      • VirusTotal jest opcjonalny; bez klucza pozostałe 11 źródeł działa normalnie.<br>
+      • Kluczowa zasada CTI z tego narzędzia: <b>korelacja z wielu niezależnych źródeł</b> jest mocniejsza niż jeden sygnał, a <b>geolokalizacja IP nie mówi o sprawcy</b> (Tor/CDN/proxy).</p>
     </div>
   </div>
 
@@ -351,6 +431,20 @@ function renderEnrichment(e) {
         : "";
       inner = badge + (extra.length ? `<div class="kv" style="margin-top:6px">${extra.join(" · ")}</div>` : "") + detHtml;
     }
+  } else if (e.source === "shodan") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else {
+      const parts = [];
+      if (d.ports && d.ports.length) parts.push(`<b>porty:</b> ${d.ports.map(esc).join(", ")}`);
+      if (d.vulns && d.vulns.length) parts.push(`<b>CVE:</b> <span style="color:var(--danger)">${d.vulns.map(esc).join(", ")}</span>`);
+      if (d.tags && d.tags.length) parts.push(`<b>tagi:</b> ${d.tags.map(esc).join(", ")}`);
+      if (d.hostnames && d.hostnames.length) parts.push(`<b>hosty:</b> ${d.hostnames.map(esc).join(", ")}`);
+      inner = `<div class="kv">${parts.length ? parts.join("<br>") : (d.note ? esc(d.note) : "brak danych")}</div>`;
+    }
+  } else if (e.source === "threatfox") {
+    if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
+    else if (d.on_threatfox) inner = `<span class="badge tor">THREATFOX</span> <span class="kv">malware: ${esc(d.malware || "?")}</span>`;
+    else inner = `<span class="badge clean">brak na ThreatFox</span>`;
   } else if (e.source === "dns") {
     if (d.error) inner = `<div class="err">${esc(d.error)}</div>`;
     else if (d.resolved_ips) inner = `<div class="kv"><b>IP:</b> ${d.resolved_ips.map(esc).join(", ")}</div>`;
@@ -400,6 +494,7 @@ function renderEnrichment(e) {
     else {
       const labels = { cms:"CMS", commerce:"e-commerce", enterprise:"enterprise", hosting:"hosting/chmura", js_lib:"biblioteki JS", analytics:"analityka", external:"usługi zewn." };
       const parts = [];
+      if (d.web_server) parts.push(`<b>web server:</b> ${esc(d.web_server)}`);
       if (d.frontend) parts.push(`<b>frontend:</b> ${d.frontend.map(esc).join(", ")}`);
       if (d.backend) parts.push(`<b>backend:</b> ${d.backend.map(esc).join(", ")}`);
       if (d.api) parts.push(`<b>API:</b> ${d.api.map(esc).join(", ")}`);
@@ -413,6 +508,7 @@ function renderEnrichment(e) {
         const srv = Object.entries(d.server).map(([k,v]) => `${esc(k)}: ${esc(v)}`).join(" · ");
         parts.push(`<b>serwer:</b> ${srv}`);
       }
+      if (d.proxy) parts.push(`<b>proxy/cache:</b> ${d.proxy.map(esc).join(", ")}`);
       inner = `<div class="kv">${parts.length ? parts.join("<br>") : "brak wyraźnych sygnatur"}</div>
         <div class="kv" style="margin-top:4px;opacity:.7">${esc(d.note||"")}</div>`;
     }
@@ -448,6 +544,7 @@ function renderEnrichment(e) {
   }
   return `<div class="enr enr-${esc(e.source)}">
     <div class="enr-head"><span class="src src-${esc(e.source)}">${esc(e.source)}</span>
+      ${e.mitre ? `<span class="mitre" title="${esc(e.mitre.name)} · ${esc(e.mitre.tactic)}">ATT&CK ${esc(e.mitre.id)}</span>` : ""}
       <span class="kv" style="margin-left:auto">${fmt(e.created_at)}</span></div>
     ${inner}</div>`;
 }
@@ -481,9 +578,9 @@ function buildGraph(focal, related) {
 }
 
 const EXPECTED_SOURCES = {
-  ip: ["dns", "whois", "tor", "geoip", "blocklist", "virustotal"],
-  domain: ["dns", "whois", "cdn", "crt", "tech", "dns_records", "wayback", "blocklist", "virustotal"],
-  hash: ["virustotal"],
+  ip: ["dns", "whois", "tor", "geoip", "blocklist", "shodan", "threatfox", "virustotal"],
+  domain: ["dns", "whois", "cdn", "crt", "tech", "dns_records", "wayback", "blocklist", "threatfox", "virustotal"],
+  hash: ["threatfox", "virustotal"],
   url: ["tech"],
 };
 
@@ -519,6 +616,12 @@ async function showDetail(id, force = false) {
     } else {
       pivotHtml += `<div class="empty">Brak powiązań przez wspólne IP.</div>`;
     }
+    const relAsn = piv.body.related_by_asn || [];
+    if (relAsn.length) {
+      pivotHtml += `<h3>Powiązania przez ASN${piv.body.shared_asn ? " (" + esc(piv.body.shared_asn) + ")" : ""}</h3>`;
+      pivotHtml += `<div class="kv" style="margin-bottom:6px">Poziom sieci — szersze i słabsze niż wspólne IP.</div>`;
+      pivotHtml += relAsn.map(i => `<div class="rel" data-id="${i.id}">↔ <span class="type type-${esc(i.type)}">${esc(i.type)}</span> <span class="val">${esc(i.value)}</span> <span class="badge lowconf">wspólny ASN</span></div>`).join("");
+    }
   }
 
   const expected = EXPECTED_SOURCES[body.type] || [];
@@ -542,7 +645,8 @@ async function showDetail(id, force = false) {
       <span class="big">${esc(body.value)}</span>
       <span class="type type-${esc(body.type)}">${esc(body.type)}</span>
       ${progressBadge}
-      <button id="delIoc" type="button" class="danger" style="margin-left:auto">Usuń</button>
+      <button id="watchIoc" type="button" style="margin-left:auto">★ Śledź</button>
+      <button id="delIoc" type="button" class="danger">Usuń</button>
     </div>
     <div class="dmeta">źródło: ${esc(body.source) || "—"} · dodano ${fmt(body.created_at)}</div>
     ${riskHtml}
@@ -564,6 +668,12 @@ async function showDetail(id, force = false) {
     selectedId = null; lastDetailSig = "";
     det.innerHTML = `<div class="empty">Usunięto. Wybierz inny wskaźnik.</div>`;
     loadList(true);
+  });
+
+  const wIoc = det.querySelector("#watchIoc");
+  if (wIoc) wIoc.addEventListener("click", async () => {
+    await addToWatch("ioc", id);
+    wIoc.textContent = "śledzone ✓"; wIoc.disabled = true;
   });
 }
 
@@ -656,13 +766,14 @@ async function showTarget(id) {
   const scanned = body.last_scanned_at ? fmt(body.last_scanned_at) : "jeszcze nie skanowano (worker w tle)";
   det.innerHTML = `
     <div class="dhead"><span class="big">${esc(body.domain)}</span> ${statusBadge(body.status)}
-      <button id="delTarget" type="button" class="danger" style="margin-left:auto">Usuń cel</button></div>
+      <button id="watchTarget" type="button" style="margin-left:auto">★ Śledź</button>
+      <button id="delTarget" type="button" class="danger">Usuń cel</button></div>
     <div class="dmeta">assety: ${assets.length} · findings: ${findings.length} · ostatni skan: ${scanned}</div>
     <h3>Findings</h3>
     ${findings.length ? findings.map(f => `
       <div class="finding">
         <span class="sev sev-${esc(f.severity)}">${esc(f.severity)}</span>
-        <div><div><b>${esc(f.title)}</b></div>
+        <div><div><b>${esc(f.title)}</b> ${f.mitre ? `<span class="mitre" title="${esc(f.mitre.name)} · ${esc(f.mitre.tactic)}">${esc(f.mitre.id)}</span>` : ""}</div>
           <div class="kv">${esc(f.asset)}${f.detail ? " — " + esc(f.detail) : ""}</div></div>
       </div>`).join("") : `<div class="empty">Brak findings (albo skan jeszcze trwa).</div>`}
     <h3>Assety (${assets.length})</h3>
@@ -677,6 +788,12 @@ async function showTarget(id) {
     selectedTarget = null;
     det.innerHTML = `<div class="empty">Usunięto cel.</div>`;
     loadTargets(true);
+  });
+
+  const wT = det.querySelector("#watchTarget");
+  if (wT) wT.addEventListener("click", async () => {
+    await addToWatch("target", id);
+    wT.textContent = "śledzone ✓"; wT.disabled = true;
   });
 }
 
@@ -723,6 +840,37 @@ async function loadOverview() {
     }));
 }
 
+async function loadWatch() {
+  const wl = await api("/watchlist");
+  const al = await api("/alerts");
+  const wrap = $("#watchWrap");
+  const list = (wl.ok && Array.isArray(wl.body)) ? wl.body : [];
+  wrap.innerHTML = list.length ? list.map(w => `
+    <div class="rel" style="cursor:default; display:flex; align-items:center; gap:8px">
+      <span class="type">${esc(w.kind)}</span>
+      <span class="val">${esc(w.label)}</span>
+      ${w.alert_count ? `<span class="badge tor">${w.alert_count} alert</span>` : ""}
+      <span class="kv" style="margin-left:auto">${w.last_checked ? "sprawdzono " + fmt(w.last_checked) : "czeka na sprawdzenie"}</span>
+      <button class="danger" data-wid="${w.id}" style="padding:4px 10px">Usuń</button>
+    </div>`).join("") : `<div class="empty">Nic nie śledzisz. Kliknij „★ Śledź" w szczegółach IOC lub celu recon.</div>`;
+  wrap.querySelectorAll("button[data-wid]").forEach(b => b.addEventListener("click", async () => {
+    await fetch(`/watchlist/${b.dataset.wid}`, { method: "DELETE" });
+    loadWatch();
+  }));
+
+  const alerts = (al.ok && Array.isArray(al.body)) ? al.body : [];
+  $("#alertsWrap").innerHTML = alerts.length ? alerts.map(a => `
+    <div class="finding">
+      <span class="sev sev-${esc(a.severity)}">${esc(a.severity)}</span>
+      <div><div><b>${esc(a.message)}</b></div>
+        <div class="kv">${esc(a.label)} · ${fmt(a.created_at)}</div></div>
+    </div>`).join("") : `<div class="empty">Brak alertów. Pojawią się, gdy monitor wykryje zmianę.</div>`;
+}
+
+async function addToWatch(kind, refId) {
+  await api("/watchlist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, ref_id: Number(refId) }) });
+}
+
 document.querySelectorAll(".tab").forEach(t =>
   t.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
@@ -732,6 +880,7 @@ document.querySelectorAll(".tab").forEach(t =>
     $("#view-" + v).style.display = "";
     if (v === "recon") loadTargets(true);
     if (v === "overview") loadOverview();
+    if (v === "watch") loadWatch();
   })
 );
 
@@ -750,6 +899,10 @@ setInterval(() => {
   if ($("#view-recon").style.display !== "none") {
     loadTargets(true);
     if (selectedTarget) showTarget(selectedTarget);
+  } else if ($("#view-watch").style.display !== "none") {
+    loadWatch();
+  } else if ($("#view-overview").style.display !== "none") {
+    loadOverview();
   } else {
     loadList();
     if (selectedId) showDetail(selectedId);

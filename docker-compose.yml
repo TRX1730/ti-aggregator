@@ -46,6 +46,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  monitor-worker:
+    build: ./worker
+    command: ["python", "-u", "monitor_worker.py"]
+    environment:
+      DATABASE_URL: "postgres://ti:ti@db:5432/ti?sslmode=disable"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   adminer:
     image: adminer:latest
     ports:
